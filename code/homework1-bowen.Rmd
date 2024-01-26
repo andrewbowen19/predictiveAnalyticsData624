@@ -1,0 +1,50 @@
+---
+title: 'DATA 624: Homework 1'
+author: "Andrew Bowen"
+date: "2024-01-26"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r library, echo=FALSE, message=FALSE}
+library(tsibble)
+library(tsibbledata)
+library(tidyverse)
+library(feasts) # for autoplot
+```
+
+## Exercise 2.1
+
+```{r}
+?aus_production
+```
+
+
+```{r}
+# Select series of interest from datasets
+aus_production <- aus_production %>% select(Quarter, Bricks)
+pelt <- pelt %>% select(Year, Lynx)
+gafa_stock <- gafa_stock %>% select(Date, Close)
+vic_elec <- vic_elec %>% select(Time, Demand)
+```
+
+Looking at each of our datasets, the **timescale** of each is listed below:
+- `aus_production` - Quarterly
+- `pelt` - Yearly
+- `gafa_stock` - Daily
+- `vic_elec` - Hourly
+
+
+```{r}
+# Plotting each series using `autoplot`
+autoplot(aus_production, Bricks)
+autoplot(pelt, Lynx)
+autoplot(gafa_stock, Close)
+autoplot(vic_elec, Demand)
+```
