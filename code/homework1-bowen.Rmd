@@ -3,8 +3,8 @@ title: 'DATA 624: Homework 1'
 author: "Andrew Bowen"
 date: "2024-01-26"
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -37,8 +37,8 @@ vic_elec <- vic_elec %>% select(Time, Demand)
 Looking at each of our datasets, the **timescale** of each is listed below:
 - `aus_production` - Quarterly
 - `pelt` - Yearly
-- `gafa_stock` - Daily
-- `vic_elec` - Hourly
+- `gafa_stock` - Daily (trading days)
+- `vic_elec` - Half-Hourly
 
 
 ```{r}
@@ -48,3 +48,98 @@ autoplot(pelt, Lynx)
 autoplot(gafa_stock, Close)
 autoplot(vic_elec, Demand)
 ```
+
+```{r}
+# Modify  axes labels for Victoria, Aus
+autoplot(vic_elec, Demand) + labs(x="Half-Hours", y="Electricity Demand")
+```
+
+
+## Exercise 2.2
+To find the peak (max) closing price for each stock, we'll need to first group our data then filter by our value (in this case `Close`):
+```{r}
+# First group by the stock, then find the max closing price for each symbol
+gafa_stock %>% group_by(Symbol) %>% filter(Close == max(Close))
+```
+
+
+## Exercise 2.3
+````{r, show_col_types=FALSE}
+tute1 <- readr::read_csv("../data/tute1.csv")
+View(tute1)
+```
+
+
+```{r}
+mytimeseries <- tute1 |>
+  mutate(Quarter = yearquarter(Quarter)) |>
+  as_tsibble(index = Quarter)
+```
+
+```{r}
+mytimeseries |>
+  pivot_longer(-Quarter) |>
+  ggplot(aes(x = Quarter, y = value, colour = name)) +
+  geom_line() +
+  facet_grid(name ~ ., scales = "free_y")
+```
+Now let's remove `facet_grid`
+
+```{r}
+
+mytimeseries |>
+  pivot_longer(-Quarter) |>
+  ggplot(aes(x = Quarter, y = value, colour = name)) +
+  geom_line() #+
+  # facet_grid(name ~ ., scales = "free_y")
+```
+The plots are included in the same panel and share the y-axis! This can smooth out the graphs unnecessarily.
+
+
+## Exercise 2.4
+
+```{r}
+library(USgas)
+```
+
+```{r}
+us_total <- us_total |> as_tsibble(index=year, key=state)
+
+# Plot consumption for New England
+new_england <- us_total %>%
+                  filter(state == "Massachusetts" |
+                         state=="Vermont" |
+                         state==" New Hampshire" | 
+                         state=="Maine" |
+                         state=="Connecticut" |
+                         state=="Rhode Island")
+
+autoplot(new_england, y) + labs(x="Year", y="Annual Gas Consumption (millions of cubic feet)")
+```
+
+
+
+## Exercise 2.5
+
+```{r}
+# Formatting quarter: 1998-01-01 => 1998 Q1
+tourism_xl <- readxl::read_excel("../data/tourism.xlsx") |>
+  mutate(Quarter= yearquarter(Quarter)) |> 
+  as_tsibble(index=Quarter, key=c(Region, State, Purpose))
+```
+
+```{r}
+tourism_xl %>% group_by(Region, Purpose) %>%
+  summarise(trips=mean(Trips)) %>%
+  filter(trips==max(trips))
+```
+
+## Exercise 2.8
+
+
+
+
+
+
+
+
