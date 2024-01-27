@@ -17,6 +17,7 @@ library(tsibble)
 library(tsibbledata)
 library(tidyverse)
 library(feasts) # for autoplot
+library(fpp3) # For us_employment data
 ```
 
 ## Exercise 2.1
@@ -35,6 +36,7 @@ vic_elec <- vic_elec %>% select(Time, Demand)
 ```
 
 Looking at each of our datasets, the **timescale** of each is listed below:
+
 - `aus_production` - Quarterly
 - `pelt` - Yearly
 - `gafa_stock` - Daily (trading days)
@@ -128,18 +130,83 @@ tourism_xl <- readxl::read_excel("../data/tourism.xlsx") |>
   as_tsibble(index=Quarter, key=c(Region, State, Purpose))
 ```
 
+Finding whaich combination of `Region` and `Purpose` had the maximum number of overnight trips on average.
 ```{r}
-tourism_xl %>% group_by(Region, Purpose) %>%
-  summarise(trips=mean(Trips)) %>%
-  filter(trips==max(trips))
+mean_trips <- tourism_xl %>%
+  group_by(Region, Purpose) %>%
+  mutate(trips=mean(Trips)) %>%
+  filter(trips == max(trips))
+
+mean_trips
 ```
+From our aggregated dataframe it appears Business in Adelaide produces the highest number of trips on average.
+
+Now we can get the total trips by state using similar `group_by` functionality:
+```{r}
+# Getting total trips by state using the groupo_by function
+total_trips <- tourism %>% 
+                group_by(State) %>%
+                summarise(sum(Trips))
+total_trips
+```
+
 
 ## Exercise 2.8
 
 
+```{r}
+us_emp <- fpp3::us_employment %>% filter(Title == "Total Private") %>% select(Month, Employed)
+```
+
+```{r}
+# Plotting US employment for each plot type
+autoplot(us_emp, Employed)
+gg_season(us_emp, Employed)
+gg_lag(us_emp, Employed)
+gg_subseries(us_emp, Employed)  
+```
+
+
+```{r}
+# Selecting needed features
+pelt <- tsibbledata::pelt %>% select(Year, Hare)
+us_gas <- us_gasoline %>% select(Week, Barrels)
+pbs <- PBS %>% filter(ATC2 == 'H02') %>% select(Month, Cost)
+```
+
+Plotting Pelt data first
+```{r}
+autoplot(pelt, Hare)
+# gg_season(pelt, Hare) # This is yearly data, so no seasonality
+gg_lag(pelt, Hare)
+gg_subseries(pelt, Hare)
+```
+
+
+Now we can plot from our `aus_production` dataset
+```{r}
+autoplot(aus_production, Bricks)
+gg_season(aus_production, Bricks)
+gg_lag(aus_production, Bricks)
+gg_subseries(aus_production, Bricks)
+```
+This data is a bit less granular (monthly, instead of quarterly). However, seasonal cycles can still be observed within a given year. There was an outlier year in the early 80s likely due to a larger economic issue.
+
+Now we can plot our PBS Cost data. We definitely see seasonality within these time series, as well as a general increase over a longer time scale. Feb - May seems to be a down period for safety net payments as well.
+```{r}
+autoplot(pbs, Cost)
+gg_season(pbs, Cost)
+# gg_lag(pbs, Cost) # More than one series present
+gg_subseries(pbs, Cost)
+```
 
 
 
 
-
-
+Finally, we can plot out the data on US gasoline supplied. Again, we see seasonal effects present in this data. One thing about this time series is that the variance of the seasonal shifts is pretty small. In other words, the amount by which production swings due to seasonality is pretty consistent over time. Also, no larger outlier years jump out at us visually.
+```{r}
+autoplot(us_gas, Barrels)
+gg_season(us_gas, Barrels)
+gg_lag(us_gas, Barrels)
+gg_subseries(us_gas, Barrels)
+```
