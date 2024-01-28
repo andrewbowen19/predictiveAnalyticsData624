@@ -1,0 +1,65 @@
+---
+title: 'DATA 624: Homework 2'
+subtitle: 'Time Series Decomposition'
+author: "Andrew Bowen"
+date: "2024-01-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries, echo=FALSE, message=FALSE}
+library(tidyverse)
+library(tsibble)
+library(fpp3)
+```
+
+
+
+## Exercise 3.1
+First, le'ts take a look at our `global_economy` dataset:
+```{r}
+head(global_economy)
+```
+
+
+First, we'll need to calculate the GDP per capita by time period
+```{r}
+global_economy <- global_economy %>% mutate(gdp_per_capita = GDP / Population)
+
+# Plot GDP per capita per country over time
+autoplot(global_economy, gdp_per_capita)
+```
+Now let's find the countrieswith the highest GDP per capita. Looking at our sorted result, it looks like micro-nations like Monaco, Liechenstein, and Luxembourg top the list.
+```{r}
+# Find GDP per Capita by Country, then sort on result
+highest_gdps <- global_economy %>%
+              group_by(Country) %>%
+              arrange(desc(gdp_per_capita))
+highest_gdps
+```
+
+Not we can plot our results, let's look at Monaco's GDP per capita over time. We see a strong upward trend since the start of our dataset (1970)
+
+```{r}
+monaco <- global_economy %>%
+                filter(Country == "Monaco")
+
+# Plot results for Monaco
+autoplot(monaco) + labs(x="Year", y="GDP per Capita (USD)", title="Monaco GDP per Capita over Time")
+```
+
+## Exercise 3.2
+
+
+## Exercise 3.3
+
+
+
+
+## Exercise 3.8
+
+

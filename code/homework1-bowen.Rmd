@@ -1,5 +1,6 @@
 ---
 title: 'DATA 624: Homework 1'
+subtitle: 'Time Series Visualization'
 author: "Andrew Bowen"
 date: "2024-01-26"
 output:
