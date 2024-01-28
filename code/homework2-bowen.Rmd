@@ -112,11 +112,11 @@ autoplot(aus_gas_seats) +
 
 
 ## Exercise 3.3
-First, let's look at the `canadian_gas` data
+First, let's look at the `canadian_gas` time series data with a basic `autoplot`
 ```{r}
 autoplot(canadian_gas)
 ```
-Let's run and plot a Box-Cox
+Let's run and plot a Box-Cox transform to see if this transformation is appropriate for this data.
 
 ```{r}
 lambda <- canadian_gas %>%
@@ -125,11 +125,27 @@ lambda <- canadian_gas %>%
 canadian_gas %>%
   autoplot(box_cox(Volume, lambda))
 ```
-In this case, the Box-cox transformation didn't change much with a returned value of $\lambda=0.5767...$. We
+In this case, the Box-cox transformation didn't change much with a returned value of $\lambda=0.5767...$. Additionally, the seasonal variation within this isn't constant over our timeframe, indicating our selected value of $\lambda$ may not be optimal.
 
-```{r}
-hist(canadian_gas$Volume)
-```
 ## Exercise 3.8
+First, let's visualize the raw data present in `aus_retail`
+```{r}
+autoplot(aus_retail)
+```
+Let's first select a single series, using the method from Chapter 2 of the text
+```{r}
+set.seed(9111997)
+myseries <- aus_retail %>%
+  filter(`Series ID` == sample(aus_retail$`Series ID`, 1))
+```
+
+Now let's decompose the series using the X-11 method
+```{r}
+x11_dcmp <- aus_retail %>%
+  model(x11 = X_13ARIMA_SEATS(Turnover ~ x11())) %>%
+  components()
+autoplot(x11_dcmp) +
+  labs(title ="Decomposition of total Australian retail turnover  using X-11.")
+```
 
 
