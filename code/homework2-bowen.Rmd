@@ -15,6 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(tsibble)
 library(fpp3)
+library(seasonal)
 ```
 
 
@@ -53,13 +54,82 @@ autoplot(monaco) + labs(x="Year", y="GDP per Capita (USD)", title="Monaco GDP pe
 ```
 
 ## Exercise 3.2
+First, plotting the USA GDP over time. There's not much seasonal variation in this dataset, so a transformation isn't likely necessary.
+```{r}
+usa <- global_economy %>% filter(Country == "United States")
+
+autoplot(usa)
+```
+
+Next, we can plot from `aus_livestock`
+
+```{r aus-livestock}
+bulls <- aus_livestock %>% filter (Animal == "Bulls, bullocks and steers" & State=="Victoria")
+
+autoplot(bulls, Count)
+```
+We see much more seasonal variation from this time series unlike before. We can us e a classic decomposition method from our text to break out the seasonal, trend, and cyclic components of this time series.
+```{r}
+bulls %>% 
+  model(
+    classical_decomposition(Count, type = "additive")
+  ) %>% 
+  components() %>%
+  autoplot() +
+  labs(title = "Bulls, bullock and steer slaughters in Australia")
+```
+
+We can now 
+
+```{r}
+autoplot(vic_elec)
+```
+Let's transform the australian gas data using the X ARIMA method used in the text
+```{r}
+autoplot(aus_production, Gas)
+```
+
+```{r}
+aus_x11_dcmp <- aus_production %>%
+  model(x11 = X_13ARIMA_SEATS(Gas ~ x11())) %>%
+  components()
+autoplot(aus_x11_dcmp) +
+  labs(title = "X-11 Decomposition of total Australian Gas Production")
+```
+We can see the different time series components as a result of the X-11 decomposition.
+
+
+We can use the [SEATS method](https://otexts.com/fpp3/methods-used-by-official-statistics-agencies.html#seats-method) to decompose this dataset
+```{r}
+# Use SEATS decomposition on Australian gas data
+aus_gas_seats <- aus_production %>%
+  model(seats = X_13ARIMA_SEATS(Gas ~ seats())) %>%
+  components()
+autoplot(aus_gas_seats) +
+  labs(title = "Decomposition of total Australian gas production")
+```
+
 
 
 ## Exercise 3.3
+First, let's look at the `canadian_gas` data
+```{r}
+autoplot(canadian_gas)
+```
+Let's run and plot a Box-Cox
 
+```{r}
+lambda <- canadian_gas %>%
+  features(Volume, features=guerrero) %>%
+  pull(lambda_guerrero)
+canadian_gas %>%
+  autoplot(box_cox(Volume, lambda))
+```
+In this case, the Box-cox transformation didn't change much with a returned value of $\lambda=0.5767...$. We
 
-
-
+```{r}
+hist(canadian_gas$Volume)
+```
 ## Exercise 3.8
 
 
