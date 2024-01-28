@@ -23,7 +23,7 @@ library(fpp3) # For us_employment data
 ## Exercise 2.1
 
 ```{r}
-?aus_production
+help(aus_production)
 ```
 
 
