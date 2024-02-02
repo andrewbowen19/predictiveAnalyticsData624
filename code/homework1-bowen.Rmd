@@ -19,6 +19,7 @@ library(tsibbledata)
 library(tidyverse)
 library(feasts) # for autoplot
 library(fpp3) # For us_employment data
+library(USgas)
 ```
 
 ## Exercise 2.1
@@ -43,7 +44,7 @@ Looking at each of our datasets, the **timescale** of each is listed below:
 - `gafa_stock` - Daily (trading days)
 - `vic_elec` - Half-Hourly
 
-
+Now we can plot our data using `autoplot`, we'll plot each of the time series of interest per dataset:
 ```{r}
 # Plotting each series using `autoplot`
 autoplot(aus_production, Bricks)
@@ -59,7 +60,7 @@ autoplot(vic_elec, Demand) + labs(x="Half-Hours", y="Electricity Demand")
 
 
 ## Exercise 2.2
-To find the peak (max) closing price for each stock, we'll need to first group our data then filter by our value (in this case `Close`):
+To find the peak (max) closing price for each stock, we'll need to first group our data by the stock symbol (`Stock`) then filter by our value (in this case `Close`) to grab the maximum of the Closing price:
 ```{r}
 # First group by the stock, then find the max closing price for each symbol
 gafa_stock %>% group_by(Symbol) %>% filter(Close == max(Close))
@@ -67,18 +68,21 @@ gafa_stock %>% group_by(Symbol) %>% filter(Close == max(Close))
 
 
 ## Exercise 2.3
+Let's read in the sales data from the book website:
 ````{r, show_col_types=FALSE}
-tute1 <- readr::read_csv("../data/tute1.csv")
-View(tute1)
+tute1 <- readr::read_csv("https://otexts.com/fpp3/extrafiles/tute1.csv")
+head(tute1)
 ```
 
 
 ```{r}
+# Now convert the data.frame to a tsibble object, and set up the TS index
 mytimeseries <- tute1 |>
   mutate(Quarter = yearquarter(Quarter)) |>
   as_tsibble(index = Quarter)
 ```
 
+Now let's plot the 3 time series, first using `facet_grid`
 ```{r}
 mytimeseries |>
   pivot_longer(-Quarter) |>
@@ -89,22 +93,18 @@ mytimeseries |>
 Now let's remove `facet_grid`
 
 ```{r}
-
 mytimeseries |>
   pivot_longer(-Quarter) |>
   ggplot(aes(x = Quarter, y = value, colour = name)) +
   geom_line() #+
   # facet_grid(name ~ ., scales = "free_y")
 ```
-The plots are included in the same panel and share the y-axis! This can smooth out the graphs unnecessarily.
+The plots are included in the same panel and share the y-axis! This can smooth out the graphs unnecessarily and introduce different scaling. Depending on context, this can be a good or a bad thing.
 
 
 ## Exercise 2.4
 
-```{r}
-library(USgas)
-```
-
+First let's conevet the `us_total` dataset from `USGas` to be a tsibble, then filter down to the states in New England.
 ```{r}
 us_total <- us_total |> as_tsibble(index=year, key=state)
 
@@ -117,13 +117,14 @@ new_england <- us_total %>%
                          state=="Connecticut" |
                          state=="Rhode Island")
 
+# Now plot
 autoplot(new_england, y) + labs(x="Year", y="Annual Gas Consumption (millions of cubic feet)")
 ```
 
 
 
 ## Exercise 2.5
-
+Let's read in the tourism data and then convert to a `tsibble` object, with a quarterly index:
 ```{r}
 # Formatting quarter: 1998-01-01 => 1998 Q1
 tourism_xl <- readxl::read_excel("../data/tourism.xlsx") |>
@@ -131,7 +132,7 @@ tourism_xl <- readxl::read_excel("../data/tourism.xlsx") |>
   as_tsibble(index=Quarter, key=c(Region, State, Purpose))
 ```
 
-Finding whaich combination of `Region` and `Purpose` had the maximum number of overnight trips on average.
+Finding which combination of `Region` and `Purpose` had the maximum number of overnight trips on average. Similar to above, we can use `group_by` here and then sort/filter our aggregated data:
 ```{r}
 mean_trips <- tourism_xl %>%
   group_by(Region, Purpose) %>%
@@ -153,9 +154,8 @@ total_trips
 
 
 ## Exercise 2.8
-
-
 ```{r}
+# Get the Total Private time series from the employment data
 us_emp <- fpp3::us_employment %>% filter(Title == "Total Private") %>% select(Month, Employed)
 ```
 
@@ -172,20 +172,20 @@ gg_subseries(us_emp, Employed)
 # Selecting needed features
 pelt <- tsibbledata::pelt %>% select(Year, Hare)
 us_gas <- us_gasoline %>% select(Week, Barrels)
-pbs <- PBS %>% filter(ATC2 == 'H02') %>% select(Month, Cost)
+pbs <- PBS %>% filter(ATC2 == 'H02') %>% index_by(Month) %>% summarise(Cost = sum(Cost))
 ```
 
-Plotting Pelt data first
+Plotting Pelt data first. A lag of 5 shows an interesting negative relationship. In other words, data in this dataset froma. certain point in time correlates with data from 5 years prior. We see this in the basic TS plot with a periodicity of 5 years.
 ```{r}
 autoplot(pelt, Hare)
-# gg_season(pelt, Hare) # This is yearly data, so no seasonality
-gg_lag(pelt, Hare)
+# gg_season(pelt, Hare, period="5") # This is yearly data, so no seasonality
+gg_lag(pelt, Hare, geom="point")
 gg_subseries(pelt, Hare)
 ```
 
 
-Now we can plot from our `aus_production` dataset
-```{r}
+Now we can plot from our `aus_production` dataset. Looking at this data, we definitely see seasonality between the quarters of the year. Rows with missing data are removed from `gg_lag` by default.
+```{r, warning=FALSE}
 autoplot(aus_production, Bricks)
 gg_season(aus_production, Bricks)
 gg_lag(aus_production, Bricks)
@@ -193,11 +193,11 @@ gg_subseries(aus_production, Bricks)
 ```
 This data is a bit less granular (monthly, instead of quarterly). However, seasonal cycles can still be observed within a given year. There was an outlier year in the early 80s likely due to a larger economic issue.
 
-Now we can plot our PBS Cost data. We definitely see seasonality within these time series, as well as a general increase over a longer time scale. Feb - May seems to be a down period for safety net payments as well.
+Now we can plot our summed PBS Cost data for `H02` ATC2 codes. We definitely see seasonality within these time series, as well as a general increase over a longer time scale. Feb - May seems to be a down period for safety net payments as well.
 ```{r}
 autoplot(pbs, Cost)
 gg_season(pbs, Cost)
-# gg_lag(pbs, Cost) # More than one series present
+gg_lag(pbs, Cost) # More than one series present
 gg_subseries(pbs, Cost)
 ```
 
