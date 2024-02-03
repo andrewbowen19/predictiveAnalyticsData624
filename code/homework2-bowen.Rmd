@@ -16,6 +16,8 @@ library(tidyverse)
 library(tsibble)
 library(fpp3)
 library(seasonal)
+library(glue)
+library(slider)
 ```
 
 
@@ -113,7 +115,7 @@ autoplot(aus_gas_seats) +
 
 ## Exercise 3.3
 First, let's look at the `canadian_gas` time series data with a basic `autoplot`
-```{r}
+```{r, warning=FALSE}
 autoplot(canadian_gas)
 ```
 Let's run and plot a Box-Cox transform to see if this transformation is appropriate for this data.
@@ -127,25 +129,166 @@ canadian_gas %>%
 ```
 In this case, the Box-cox transformation didn't change much with a returned value of $\lambda=0.5767...$. Additionally, the seasonal variation within this isn't constant over our timeframe, indicating our selected value of $\lambda$ may not be optimal.
 
+
+## Exercise 3.4
+
+```{r}
+# Let's pick a single series value
+retail <- aus_retail %>%
+  filter(`Series ID` == "A3349849A")
+
+autoplot(retail)
+```
+Now we can apply Box-Cox transform to this dataset, we can try this with varying values of lambda to see which 
+```{r}
+lambdas = seq(0,5, 0.5)
+
+# Try BC transform for varying values of lambda, then plot
+for (l in lambdas){
+  title <- glue("Box-Cox Transformation with lambda = {l}")
+  p <- retail %>% autoplot(box_cox(Turnover, l)) + labs(x="Month", y="Monthly Turnover", title=title)
+  print(p)
+}
+```
+
+From our plots, we see a lower value of $\lambda$ is a better transform for our data, as towards the higher end we see more variance in our seasonal variations (a "wider" cycle). We can verify this using the [Guerrero feature listed in the book](https://otexts.com/fpp3/transformations.html#mathematical-transformations).
+
+```{r}
+# Find ideal lambda for retail data
+lambda <-retail %>%
+  features(Turnover, features=guerrero) %>%
+  pull(lambda_guerrero)
+print(lambda)
+```
+
+## Exercise 3.5
+
+```{r}
+# Running Box-Cox on Tobacco series
+tobacco <- tsibbledata::aus_production %>% select(Tobacco)
+
+tobacco_lambda <- tobacco %>% features(Tobacco, features=guerrero) %>%
+  pull(lambda_guerrero)
+
+tobacco %>% autoplot(box_cox(Tobacco, tobacco_lambda))
+```
+Now let's plot the `Economy` passengers series transformed. We'll use the same Box-Cox transformation method used above. For this data, we see some large dips in 1989 and 1993
+```{r economy-passengers}
+# Filter and select down to economy passnegers between Melbourne and Sydney
+economy <- ansett %>% filter(Class == "Economy" & Airports == "MEL-SYD") %>% select(Passengers)
+
+economy_lambda <- economy %>% features(Passengers, features=guerrero) %>%
+  pull(lambda_guerrero)
+print(economy_lambda)
+
+# Plot the box cox transform!
+economy %>% autoplot(box_cox(Passengers, economy_lambda))
+```
+Now we can runa. Box-Cox transformation against the `pedestrian` dtaa at Southern Cross Station
+```{r}
+scs <- pedestrian %>% filter(Sensor == "Southern Cross Station")
+
+scs_lambda <- scs %>% features(Count, features=guerrero) %>%
+  pull(lambda_guerrero)
+
+print(scs_lambda)
+# Plot the box cox transform!
+scs %>% autoplot(box_cox(Count, scs_lambda))
+```
+
+
+
+## Exercise 3.7
+```{r}
+# time series def from the book
+gas <- tail(tsibbledata::aus_production, 5*4) %>% select(Gas)
+
+autoplot(gas, Gas)
+```
+
+There are quarterly seasonal fluctuations in this data, as well as a general upward trend throughout the timespan of this data (5 years). We can run a classical multiplicative decomposition on this
+
+```{r}
+gas %>%
+  model(classical_decomposition(Gas, type = "multiplicative")) |>
+  components() |>
+  autoplot() +
+  labs(title = "Classical multiplicative decomposition of Australian gas production (2006 - 2010)")
+```
+From our classical decomposition we see an upward trend in gas production over the past 5 years and quarterly cycles. This is in line with our observations above. We can take a 5-MA moving average to adjust this data for seasonal cycles
+
+```{r}
+# Run X-11 to make seasonal adjustment
+gas_smoothed <- gas %>%
+  model(x11 = X_13ARIMA_SEATS(Gas ~ x11())) %>% components()
+
+# plot seasonally adjusted data
+gas_smoothed |>
+  ggplot(aes(x = Quarter)) +
+  geom_line(aes(y = season_adjust,
+                colour = "Seasonally Adjusted"))
+```
+
+Now we can add an outlier point to our data and recompute the seasonal adjustment:
+```{r}
+# Add 300 to a quarter gas value
+gas_outlier <- gas %>% mutate(Gas = ifelse(`Quarter` == yearquarter("2005 Q3"), 471, Gas))
+
+# Recompute saesonal adjustment (X-11 again) and plot
+gas_smoothed <- gas_outlier %>%
+  model(x11 = X_13ARIMA_SEATS(Gas ~ x11())) %>% components()
+
+# plot seasonally adjusted data
+gas_smoothed |>
+  ggplot(aes(x = Quarter)) +
+  geom_line(aes(y = season_adjust,
+                colour = "Seasonally Adjusted (with Outlier)"))
+```
+
+We see a huge spike on our outlier value for `Q3 2005`. This is close to the end of our series, let's try one in the middle of our series (`Q1 2008`)
+
+```{r}
+# Add 300 to a quarter gas value
+gas_outlier <- gas %>% mutate(Gas = ifelse(`Quarter` == yearquarter("2008 Q1"), 471, Gas))
+
+# Recompute seasonal adjustment (X-11 again) and plot
+gas_smoothed <- gas_outlier %>%
+  model(x11 = X_13ARIMA_SEATS(Gas ~ x11())) %>% components()
+
+# plot seasonally adjusted data
+gas_smoothed |>
+  ggplot(aes(x = Quarter)) +
+  geom_line(aes(y = season_adjust,
+                colour = "Seasonally Adjusted (with Outlier)"))
+```
+
+Here we see a huge spike in the middle, which makes it difficult to get a sense of scale with our trend cycle.
+
+
 ## Exercise 3.8
 First, let's visualize the raw data present in `aus_retail`
 ```{r}
 autoplot(aus_retail)
 ```
+
 Let's first select a single series, using the method from Chapter 2 of the text
-```{r}
-set.seed(9111997)
+```{r single-series-select}
+# Select single series ID
 myseries <- aus_retail %>%
-  filter(`Series ID` == sample(aus_retail$`Series ID`, 1))
+  filter(`Series ID` == "A3349849A")
 ```
 
-Now let's decompose the series using the X-11 method
-```{r}
-x11_dcmp <- aus_retail %>%
+Now let's decompose the series using the X-11 method, again, we'll mirror the methods used in the text using the `feasts` library and it's X-13 ARIMA SEATS method for seasonal adjustment:
+```{r arima-seats}
+x11_dcmp <- myseries %>%
   model(x11 = X_13ARIMA_SEATS(Turnover ~ x11())) %>%
   components()
-autoplot(x11_dcmp) +
-  labs(title ="Decomposition of total Australian retail turnover  using X-11.")
+autoplot(x11_dcmp) + labs(title ="Decomposition of total Australian retail turnover using X-11.")
 ```
 
 
+
+## Exercise 3.9
+The decomposition in these charts shows a steady upwards trend in the data, with a seasonality of a month. There's some outlier periods, which is emphasized by the remainder plot around 1991 - 1992. The seasonal component plot shows a wide variance in the level of the time series by month, with peaks in springtime (March) and December, and some strong dips. There's also less of a lag pattern we can see from the 
+
+The recession is visible from the remainder plot below. This makes sense as a large recession would generally **not** be considered a seasonal event and would break the seasonal and trend cycles within this time series.
