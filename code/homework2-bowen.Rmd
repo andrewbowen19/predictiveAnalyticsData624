@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r libraries, echo=FALSE, message=FALSE}
+```{r libraries, warning=FALSE, message=FALSE, echo=FALSE}
 library(tidyverse)
 library(tsibble)
 library(fpp3)
@@ -164,13 +164,11 @@ print(lambda)
 ## Exercise 3.5
 
 ```{r}
-# Running Box-Cox on Tobacco series
-tobacco <- tsibbledata::aus_production %>% select(Tobacco)
-
-tobacco_lambda <- tobacco %>% features(Tobacco, features=guerrero) %>%
+# Running Box-Cox on Tobacco series from aus production
+tobacco_lambda <- aus_production %>% features(Tobacco, features=guerrero) %>%
   pull(lambda_guerrero)
 
-tobacco %>% autoplot(box_cox(Tobacco, tobacco_lambda))
+aus_production %>% autoplot(box_cox(Tobacco, tobacco_lambda)) + labs(x="Week", y="Tobacco Production (tonnes)")
 ```
 Now let's plot the `Economy` passengers series transformed. We'll use the same Box-Cox transformation method used above. For this data, we see some large dips in 1989 and 1993
 ```{r economy-passengers}
@@ -182,9 +180,10 @@ economy_lambda <- economy %>% features(Passengers, features=guerrero) %>%
 print(economy_lambda)
 
 # Plot the box cox transform!
-economy %>% autoplot(box_cox(Passengers, economy_lambda))
+economy %>% autoplot(box_cox(Passengers, economy_lambda)) 
 ```
-Now we can runa. Box-Cox transformation against the `pedestrian` dtaa at Southern Cross Station
+
+Now we can run a Box-Cox transformation against the `pedestrian` dtaa at Southern Cross Station
 ```{r}
 scs <- pedestrian %>% filter(Sensor == "Southern Cross Station")
 
@@ -225,9 +224,10 @@ gas_smoothed <- gas %>%
 # plot seasonally adjusted data
 gas_smoothed |>
   ggplot(aes(x = Quarter)) +
-  geom_line(aes(y = season_adjust,
-                colour = "Seasonally Adjusted"))
+  geom_line(aes(y = season_adjust))
 ```
+
+In our seasonally-adjusted plot we see a clearer picture of the overall trend in our data for quarterly gas production
 
 Now we can add an outlier point to our data and recompute the seasonal adjustment:
 ```{r}
