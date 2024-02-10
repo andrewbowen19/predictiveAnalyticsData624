@@ -111,7 +111,7 @@ This data looks to have a seasonal component visually, so we can use a `SNAIVE` 
 takeout_fit <- takeout |>
   model(
     Naive = SNAIVE(total_turnover),
-    Drift = NAIVE(total_turnover ~ drift())
+    Drift = RW(total_turnover ~ drift())
   )
 
 # Create and plot forecast of Aus takeout turnover
@@ -125,8 +125,60 @@ takeout_fc %>% autoplot(takeout, level=NULL) +
 ```
 
 ## Exercise 5.2
+*Use the Facebook stock price (data set gafa_stock) to do the following:
+
+Produce a time plot of the series.
+Produce forecasts using the drift method and plot them.
+Show that the forecasts are identical to extending the line drawn between the first and last observations.
+Try using some of the other benchmark functions to forecast the same data set. Which do you think is best? Why?
 
 
+First we need t select the Facebook-only time series in our `gafa_stock` dataset. For simplicity, we'll use the closing price (`Close`) used in the text.
+```{r}
+facebook <- gafa_stock %>% filter(Symbol=="FB") %>% update_tsibble(regular = TRUE) %>% fill_gaps()
+
+# Plot time series
+facebook %>% autoplot(Close) + labs(x="Date", y="Stock Price ($)", title="Closing price of facebook stock")
+```
+
+Now let's create a drift forecast for the facebook stock data. We have an [irregular time series with some gaps](https://www.ibm.com/docs/en/informix-servers/14.10?topic=concepts-irregular-time-series), so we'll fill those with the `tsibble::fill_gaps` method.
+```{r facebook-drfit}
+fb_fit <- facebook %>% model(Drift = RW(Close ~ drift()))
+
+# now let's forecaste and plot our drift fit for 100 days out
+fb_fc <- fb_fit |> forecast(h = 100)
+fb_fc %>% autoplot(facebook, level = NULL) + 
+  autolayer(
+    facebook,
+    colour = "black"
+  ) + guides(colour = guide_legend(title = "Forecast")) + labs(title="Drift forecast (blue) of Facebook closing stock price")
+```
+Now we'd need to show the drift forecast equals
+```{r}
+price_min <- min(facebook$Close)
+start_date <- min(facebook$Date)
+end_date <- max(fb_fc$Date)
+price_end <- max(fb_fc$.mean) # Since oru drift is strictly increasing, we can assume the ending price is the max
+
+fb_fc %>%
+  autoplot(facebook) +
+  labs(title = "Drift forecast (blue) of Facebook closing stock price", y = "Stock Price ($)") +
+  geom_segment(aes(x = start_date, y = price_min, xend = end_date, yend = price_end),
+               colour = "orange", linetype = "dashed")
+```
+First, let's try the `NAIVE` method, which can be good for financial data
+```{r}
+fb_fit_naive <- facebook %>% model(Naive = NAIVE(Close))
+
+fb_fc_naive <- fb_fit_naive |> forecast(h = 100)
+fb_fc_naive %>% autoplot(facebook, level = NULL) + 
+  autolayer(
+    facebook,
+    colour = "black"
+  ) + guides(colour = guide_legend(title = "Forecast")) + labs(title="Naive forecast (blue) of Facebook closing stock price")
+```
+
+We're dealing with stock price data, so seasonality isn't really a concern here. If the data *did* in fact show seasonality, that would likely indicate that something is afoot, as that would violate the [efficient markets hypothesis](https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwiG4aOSn6GEAxWMC3kGHVhXDQ0QFnoECB0QAQ&url=https%3A%2F%2Fwww.investopedia.com%2Fterms%2Fe%2Fefficientmarkethypothesis.asp&usg=AOvVaw21fZldUh8flEXmcEg4rmK5&opi=89978449)
 
 ## Exercise 5.3
 ```{r warning=FALSE}
