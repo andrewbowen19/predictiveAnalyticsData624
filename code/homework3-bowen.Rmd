@@ -5,26 +5,224 @@ date: "2024-02-06"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+
+
+```{r libraries, message=FALSE, echo=FALSE}
+library(feasts)
+library(tidyverse)
+library(tsibble)
+library(tsibbledata)
+library(fpp3)
 ```
 
-## R Markdown
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+## Exercise  5.1
+First, let's plot the data for the australian population
+```{r}
+aus_pop <- global_economy %>% filter(Country == "Australia") %>% select(Population)
+autoplot(aus_pop, Population)
 ```
 
-## Including Plots
+This data is not very seasonal, but has a pretty clear trendline. In this case, a drift model could be a good approach:
+```{r}
+# Forecast with a drift model
+drift_pop <- aus_pop %>% model(RW(Population ~ drift())) 
 
-You can also embed plots, for example:
+# Create and plot forecast
+fc <- drift_pop |> forecast(h = 14)
+fc %>% autoplot(aus_pop, level = NULL) + 
+  autolayer(
+    aus_pop,
+    colour = "black"
+  ) + guides(colour = guide_legend(title = "Forecast")) + labs(title="Drift forecast (blue) of Australian Population figures")
 
-```{r pressure, echo=FALSE}
-plot(pressure)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Now let's do a similar exercise for the `Bricks` series
+```{r}
+bricks <- aus_production %>% select(Bricks)
+
+autoplot(bricks, Bricks)
+```
+
+This data looks more seasonal, so let's us a seasonal-naive approach. We'll need to first filter to ensure our model is not passed any `NA` values present in the original `Bricks` series
+```{r bricks-snaive, warning=FALSE}
+# Forecast with a seasonal-naive model: We need to filter out NA values
+brick_fit <- bricks %>% filter_index(. ~ "2005 Q1") %>% model(SNAIVE(Bricks)) 
+
+# Create and plot forecast of Aus brick production
+brick_fc <- brick_fit |> forecast(h = 12)
+brick_fc %>% autoplot(bricks, level=NULL) + 
+  autolayer(
+    filter_index(bricks, "2005 Q3" ~ .),
+    colour = "black"
+  ) + 
+  guides(colour = guide_legend(title = "Forecast"))
+
+```
+Now let's look at our `Lambs` fromt he `aus_livestock` data
+```{r}
+lambs <- aus_livestock %>% filter (State == "New South Wales" & Animal == "Lambs")
+
+lambs %>% autoplot()
+```
+Our lamb production data looks like it *could* be seasonal. However, a naive approach could be effective here
+```{r lamb-naive}
+# Forecast with a naive model
+lamb_fit <- lambs %>% model(NAIVE(Count)) 
+
+# Create and plot forecast of Aus brick production
+lamb_fc <- lamb_fit |> forecast(h = 24)
+lamb_fc %>% autoplot(lambs, level=NULL) + 
+  guides(colour = guide_legend(title = "Forecast"))
+```
+
+Let's repeat this process for household wealth (as a percentage of income:
+```{r}
+wealth <- hh_budget %>% filter(Country == "Australia") %>% select(Wealth)
+
+wealth |> autoplot()
+```
+This data fluctuates over the timespan, but isn't very seasonal. The general trend makes me think that a drift method is apporporiate here:
+```{r wealth-forecast, message=FALSE, error=FALSE, warning=FALSE}
+# Forecast with a drift model
+wealth_fit <- wealth %>% model(RW(Wealth ~ drift())) 
+
+# Create and plot forecast
+fc <- wealth_fit |> forecast(h = 5)
+fc %>% autoplot(wealth, level = NULL) + 
+  autolayer(
+    wealth,
+    colour = "black"
+  ) + guides(colour = guide_legend(title = "Forecast")) + labs(title="Drift forecast (blue) of Australian household wealth (as percentage of income)")
+```
+
+
+Lastly, we can look at takeout food from `aus_retail`
+
+```{r}
+takeout <- aus_retail %>% filter(Industry == "Takeaway food services") %>% index_by(yearmonth(Month)) %>% summarise(total_turnover=sum(Turnover))
+
+autoplot(takeout, total_turnover)
+```
+This data looks to have a seasonal component visually, so we can use a `SNAIVE` model. However, there's a strong trend as well. Let's build both a drift ans `SNAIVE` model
+```{r}
+# Forecast with a seasonal-naive model: We need to filter out NA values
+takeout_fit <- takeout |>
+  model(
+    Naive = SNAIVE(total_turnover),
+    Drift = NAIVE(total_turnover ~ drift())
+  )
+
+# Create and plot forecast of Aus takeout turnover
+takeout_fc <- takeout_fit |> forecast(h = 12)
+takeout_fc %>% autoplot(takeout, level=NULL) + 
+  autolayer(
+    takeout,
+    colour = "black"
+  ) + 
+  guides(colour = guide_legend(title = "Forecast"))
+```
+
+## Exercise 5.2
+
+
+
+## Exercise 5.3
+```{r warning=FALSE}
+# From Hyndman text
+# Extract data of interest
+recent_production <- aus_production |>
+  filter(year(Quarter) >= 1992)
+# Define and estimate a model
+fit <- recent_production |> model(SNAIVE(Beer))
+# Look at the residuals
+fit |> gg_tsresiduals()
+# Look a some forecasts
+fit |> forecast() |> autoplot(recent_production)
+```
+
+Our distribution of residuals looks roughly normally-shaped, although the two modal peaks make it appear slightly more off-normal than would be ideal. The ACF plot also shows a strong autocorrelation of residuals with a lag $l = 4$. This makes sense as we're dealing with quarterly data. In the time plot of residuals, there doesn't seem to be an overall pattern, so we can feel more confident that the model is not significantly biased.
+
+
+## Exercise 5.4
+
+### Australian economy
+
+We can run a seasonal naive model on the same `Bricks` series for the Asutralian production data
+```{r bricks-seasonal-naive}
+bricks_production <- aus_production %>% select(Bricks)
+# Define and estimate a seasonal-naive model
+fit <- bricks_production |> model(SNAIVE(Bricks))
+fit |> gg_tsresiduals()
+
+# Plot forecasts
+fit |> forecast() |> autoplot(bricks_production)
+```
+We see a strong seasonal autocorrelation in the ACF plot above. Overall our residuals look reasonably normally-distribted (though with a slight tail on the left), and there doesn't seem to be a strong pattern (with the exception of the 1980 recession).
+
+### Australian exports
+First, let's plot the austrlian exports from our `global_economy` datase
+```{r}
+aus_exports <- global_economy %>% filter(Country=="Australia") %>% select(Exports)
+
+autoplot(aus_exports)
+```
+This dataset doesn't appear to be strongly seasonal, so we're better off running a `NAIVE` method here:
+
+```{r aus-export-naive}
+# Define and estimate a naive model
+fit <- aus_exports |> model(NAIVE(Exports))
+# Look at the residuals
+fit |> gg_tsresiduals()
+# Look a some forecasts
+fit |> forecast() |> autoplot(aus_exports)
+```
+This looks like the residuals are pretty close to white noise. They're normally distributed, and there doesn't appear to be any overarching pattern in the innovation plot. In addition, the `ACF` plot doesn't show any strong pattern in residuals vs lag.
+
+## Exercise 5.7
+
+
+
+```{r text-blocks}
+# Set up my time series
+set.seed(12345678)
+myseries <- aus_retail |>
+  filter(`Series ID` == sample(aus_retail$`Series ID`,1))
+
+myseries_train <- myseries |>
+  filter(year(Month) < 2011)
+head(myseries_train)
+```
+Not we can plot turnover over time from the series selected
+```{r}
+autoplot(myseries, Turnover) +
+  autolayer(myseries_train, Turnover, colour = "red")
+```
+
+```{r}
+fit <- myseries_train |>
+  model(SNAIVE(Turnover))
+
+# Plot residuals
+fit |> gg_tsresiduals()
+```
+
+These residuals have some strong correlation, as shown by the pattern of the `ACF` plot. The residual distribution looks a bit skewed from normal as well. We can produce new forecasts below:
+```{r}
+fc <- fit |>
+  forecast(new_data = anti_join(myseries, myseries_train))
+fc |> autoplot(myseries)
+```
+
+
+```{r}
+# Compare accuracy between fit and forecast
+fit |> accuracy()
+fc |> accuracy(myseries)
+```
+
+*How sensitive are the accuracy measures to the amount of training data used?*
+
+
+
