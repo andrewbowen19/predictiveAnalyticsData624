@@ -23,7 +23,7 @@ library(slider)
 
 
 ## Exercise 3.1
-First, le'ts take a look at our `global_economy` dataset:
+First, let's take a look at our `global_economy` dataset:
 ```{r}
 head(global_economy)
 ```
