@@ -7,7 +7,7 @@ output: html_document
 
 
 
-```{r message=FALSE, echo=FALSE}
+```{r libraries, message=FALSE, echo=FALSE}
 library(tidyverse)
 library(fpp3)
 library(fabletools)
@@ -15,9 +15,11 @@ library(mlbench)
 library(tsibble)
 library(corrplot)
 library(GGally)
+library(nnet)
+library(MASS)
+library(AppliedPredictiveModeling)
+library(caret)
 ```
-
-
 
 ## Exercise 3.1 (*K&J*)
 
@@ -41,6 +43,90 @@ We can also use a corner plot from the `GGally::ggpairs` function to visually in
 ggpairs(glass, upper=NULL)
 ```
 
-The predictor variables for the minerals we care about from above seem to be a bit skewed from this visual. There seem to be a few outlier points for the potassium (`K`) predictor, but this variable doesn't correlate strongly with our outcome variable.
+The predictor variables for the minerals we care about from above seem to be a bit skewed from this visual. Specifically, the below predictor variables seem to be significantly skewed such that a transformation is necessary:
+
+- `RI`
+- `Mg`
+- `K`
+- `Ca`
+- `Ba`
+- `Fe`
+
+Some of which have strong correlations with our `Type` variable (see above)
+
+There seem to be a few outlier points for the potassium (`K`) predictor, but this variable doesn't correlate strongly with our outcome variable.
+
+#### Transformations
+Let's build a simple logistic regression model to classify `Type`. First, we'll do it with the raw data, adn then with the transformed data to see if that improves our prediction. We'll [build a simple train-test splitas well](https://stackoverflow.com/questions/17200114/how-to-split-data-into-training-testing-sets-using-sample-function) to evaluate the models
+```{r}
+# Create simple training and test datasets
+set.seed(1234) # Set Seed so that same sample can be reproduced in future also
+# Now Selecting 75% of data as sample from total 'n' rows of the data  
+sample <- sample.int(n = nrow(glass), size = floor(.75 * nrow(glass)), replace = F)
+train <- glass[sample, ]
+test  <- glass[-sample, ]
+
+raw_model <- multinom(Type ~.,  data=train)
+summary(raw_model)
+```
+
+Now we can apply some transforms to our predictors. We'll try a [*spatial sign transformation*](https://topepo.github.io/caret/pre-processing.html), which helps to reduce the effect of outliers by mapping our predictor values onto the surface of a hyper-dimensional sphere. Since all transformed data points will be the same distance from the center of the sphere, their effect as an outlier will be reduced.
+
+In addition, our `Ca` variable is collinear with some other predictor variables, so we can remove it, as the variance in our class labels is likely captured by those additional predictors outside of Calcium.
+```{r}
+# First we scale our dataset then input it into the spatialSign transform
+glass_predictors <- glass %>% dplyr::select(-c(Type))
+# glass_predictors$Mg <- log(glass_predictors$Mg)
+
+
+glass_scaled <- data.frame(scale(glass_predictors))
+glass_transformed <- as.data.frame(spatialSign(glass_scaled))
+
+glass_transformed <- glass_transformed %>% cbind(Type=glass$Type)
+
+# Remove Calcium and Silicon from dataset
+glass_transformed <- glass_transformed %>% dplyr::select(-c(Ca))
+```
+
+
+
+```{r}
+# Now Selecting 75% of data as sample from total 'n' rows of the data  
+sample <- sample.int(n = nrow(glass_transformed), size = floor(.75 * nrow(glass_transformed)), replace = F)
+train_transformed <- glass_transformed[sample, ]
+test_transformed  <- glass_transformed[-sample, ]
+
+transformed_model <- multinom(Type ~.,  data=train_transformed)#, MaxNWts=1450)
+```
+
+```{r}
+summary(transformed_model)
+```
+
+With our predictor variables transformed via spatial sign we see an improved (lower) AIC, indicating a simplaer model (this makes sense as we also removed some extraneous predictors). 
+
+```{r}
+raw_predict <- predict(raw_model, test)
+transformed_predict <- predict(transformed_model, test_transformed)
+
+# Calculate and print accuracy on raw data model and transformed data model
+(raw_accuracy <- mean(raw_predict == test$Type))
+(transformed_accuracy <- mean(transformed_predict == test_transformed$Type))
+```
+
+We see comparable accuracy numbers out of a simpler model (fewer inputs, lwoer AIC value) for our transformed data. 
 
 ## Exercise 3.2 (*K&J*)
+
+```{r load-soybean}
+data(Soybean)
+head(Soybean)
+```
+
+
+```{r}
+
+```
+
+
+
