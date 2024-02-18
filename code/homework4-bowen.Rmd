@@ -1,0 +1,46 @@
+---
+title: 'DATA 624: Homework 4'
+author: "Andrew Bowen"
+date: "2024-02-17"
+output: html_document
+---
+
+
+
+```{r message=FALSE, echo=FALSE}
+library(tidyverse)
+library(fpp3)
+library(fabletools)
+library(mlbench)
+library(tsibble)
+library(corrplot)
+library(GGally)
+```
+
+
+
+## Exercise 3.1 (*K&J*)
+
+```{r}
+data(Glass)
+head(Glass)
+```
+
+We can view the relationship between variables and our predictor (`Type`) via a correlation plot from the `corrplot` package in R
+```{r}
+# First, calculate the correlatino between variables in 
+glass <- Glass %>% mutate(Type = as.numeric(Type))
+corrGlass <- cor(glass)
+corrplot(corrGlass)
+```
+We see reasonably strong correlations between our `Type` variable and the predictors for percentage of Barium, Alimunum, Magnesium, and Sodium.
+
+We can also use a corner plot from the `GGally::ggpairs` function to visually inspect the relationships between our variables. We can also gain a sense of the distributions of each variable from this plot. I'm going to remove the correlations (`upper=NULL`; see above) to make the plot a bit less busy:
+```{r warning=FALSE, message=FALSE}
+# Use GGally to plot pairwise relationships between variables
+ggpairs(glass, upper=NULL)
+```
+
+The predictor variables for the minerals we care about from above seem to be a bit skewed from this visual. There seem to be a few outlier points for the potassium (`K`) predictor, but this variable doesn't correlate strongly with our outcome variable.
+
+## Exercise 3.2 (*K&J*)

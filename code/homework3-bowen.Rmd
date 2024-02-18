@@ -178,7 +178,7 @@ fb_fc_naive %>% autoplot(facebook, level = NULL) +
   ) + guides(colour = guide_legend(title = "Forecast")) + labs(title="Naive forecast (blue) of Facebook closing stock price")
 ```
 
-We're dealing with stock price data, so seasonality isn't really a concern here. If the data *did* in fact show seasonality, that would likely indicate that something is afoot, as that would violate the [efficient markets hypothesis](https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwiG4aOSn6GEAxWMC3kGHVhXDQ0QFnoECB0QAQ&url=https%3A%2F%2Fwww.investopedia.com%2Fterms%2Fe%2Fefficientmarkethypothesis.asp&usg=AOvVaw21fZldUh8flEXmcEg4rmK5&opi=89978449)
+We're dealing with stock price data, so seasonality isn't as much of a concern here. If the data *did* in fact show regular seasonality, that would likely indicate that something is afoot, as that would violate the [efficient markets hypothesis](https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&cad=rja&uact=8&ved=2ahUKEwiG4aOSn6GEAxWMC3kGHVhXDQ0QFnoECB0QAQ&url=https%3A%2F%2Fwww.investopedia.com%2Fterms%2Fe%2Fefficientmarkethypothesis.asp&usg=AOvVaw21fZldUh8flEXmcEg4rmK5&opi=89978449)
 
 ## Exercise 5.3
 ```{r warning=FALSE}
@@ -234,8 +234,6 @@ This looks like the residuals are pretty close to white noise. They're normally 
 
 ## Exercise 5.7
 
-
-
 ```{r text-blocks}
 # Set up my time series
 set.seed(12345678)
@@ -246,11 +244,15 @@ myseries_train <- myseries |>
   filter(year(Month) < 2011)
 head(myseries_train)
 ```
+
+
 Not we can plot turnover over time from the series selected
 ```{r}
 autoplot(myseries, Turnover) +
   autolayer(myseries_train, Turnover, colour = "red")
 ```
+
+
 
 ```{r}
 fit <- myseries_train |>
@@ -275,6 +277,68 @@ fc |> accuracy(myseries)
 ```
 
 *How sensitive are the accuracy measures to the amount of training data used?*
+We can try training on a completely different series
+```{r}
+# Sample from different training series
+set.seed(12345678)
+myseries1 <- aus_retail |>
+  filter(`Series ID` == sample(aus_retail$`Series ID`, 1))
+
+# Set up new training series : from 2005 onwards instead of 2011
+myseries_train1 <- myseries1 |>
+  filter(year(Month) < 2005)
+head(myseries_train1)
+```
+```{r, warning=FALSE}
+# Fit TS model to new training series
+fit1 <- myseries_train1 |>
+  model(SNAIVE(Turnover))
+
+# Plot residuals
+fit1 |> gg_tsresiduals()
+```
+
+With less training data (2005 onwards instead of 2011, we see much more variance (uncertainty) in our forecast.
+```{r, message=FALSE, warning=FALSE}
+fc1 <- fit1 |>
+  forecast(new_data = anti_join(myseries, myseries_train1))
+fc1 |> autoplot(myseries)
+```
 
 
+```{r}
+# Compare accuracy between fit and forecast
+fit1 |> accuracy()
+fc1 |> accuracy(myseries)
+```
+
+With less training data we also see a higher Root-mean squared error as well as Mean Absolute Error. This implies a worse fit, which makes sense as our model is in effect attempting to predict to a further time horizon. Let's try this same analysis with a curtailed training set on the "front-end" (i.e., train on less data from the *start* of the time series)
+
+
+```{r, warning=FALSE, message=FALSE}
+# Set up new training series : from 2005 onwards instead of 2011
+cutoff <- 2000
+myseries_train2 <- myseries |>
+  filter(year(Month) > cutoff  & year(Month) < 2011)
+
+my_series <- myseries |>
+  filter(year(Month) > cutoff)
+
+
+# Fit TS model to new training series
+fit2 <- myseries_train2 |>
+  model(SNAIVE(Turnover))
+
+# Forecast and plot
+fc2 <- fit2 |>
+  forecast(new_data = anti_join(my_series, myseries_train2))
+fc2 |> autoplot(myseries)
+```
+
+Let's look at our prediction accuracy metrics as well. We see a comparable RMSE value. This makes sense from a visual inspection of our data, as the decade of the 90s saw less of a pattern in turnover, with a large spike in 1996. This performance against less training data is more specific to this particular dataset. 
+```{r}
+# Compare accuracy between fit and forecast
+fit2 |> accuracy()
+fc2 |> accuracy(myseries)
+```
 
