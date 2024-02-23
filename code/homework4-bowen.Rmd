@@ -19,6 +19,9 @@ library(nnet)
 library(MASS)
 library(AppliedPredictiveModeling)
 library(caret)
+library(questionr)
+library(gridExtra)
+library(mice)
 ```
 
 ## Exercise 3.1 (*K&J*)
@@ -123,10 +126,108 @@ data(Soybean)
 head(Soybean)
 ```
 
+The `table` function in R can give 
+```{r}
+table(Soybean$plant.stand)
+```
 
+One function that 
 ```{r}
 
+
 ```
+
+### Missing Values
+
+To see which predictors have higher rates of missing values, we can use the `freq.na` fucntions fromt he `questionr` package, which lists the number and percentage of missing values per feature
+```{r}
+freq.na(Soybean)
+```
+
+From this it looks like we have several variables that are missing roughly a fifth of values (`hail`, `sever`, `seed.tmt`, `lodging` and others).
+
+
+```{r}
+# Pick out just predictors with many missing vals
+soybean_missing <- Soybean %>% dplyr::select("Class", "sever", "hail", "seed.tmt", "lodging")
+
+p1 <- ggplot(soybean_missing, aes(x=Class, fill=sever)) +
+     geom_bar(position="fill") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + labs(title = "Severing")
+
+p2 <- ggplot(soybean_missing, aes(x=Class, fill=seed.tmt)) +
+     geom_bar(position="fill") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ labs(title = "Seed Treatment")
+
+p3 <- ggplot(soybean_missing, aes(x=Class, fill=hail)) +
+     geom_bar(position="fill") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + labs(title = "Received Hail?")
+
+p4 <- ggplot(soybean_missing, aes(x=Class, fill=lodging)) +
+     geom_bar(position="fill")  + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + labs(title = "Raised in Lodging?")
+```
+
+
+```{r, sever}
+p1
+```
+
+There's better balance for our treatment variable, though some classes are missing predictor values entirely
+```{r, seed-treatment}
+p2
+```
+
+For our `lodging` property, we see some stronger class imbalance, as well as some completely null class values
+```{r, hail}
+p3
+```
+
+```{r, lodging}
+p4
+```
+
+Looking at the above plots, the predictors are missing values completely for 4 values for Soybean `Class`:
+
+- `2-4-d-injury`
+- `cyst-nematode`
+- `diaporthe-&-stem-blight`
+- `herbicide-injury`
+
+
+### Missing Values Strategy
+To handle these missing predictors, we could use the [`mice` package in R to impute values](https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&ved=2ahUKEwjel5L_p8CEAxV1jokEHUr_DhwQFnoECAYQAQ&url=https%3A%2F%2Fcran.r-project.org%2Fpackage%3Dmice&usg=AOvVaw3teMSC5Ocn4Mr47XlZeBHq&opi=89978449). Another method would be to sample from a distribution
+
+Eliminating predictors is a simpler approach, in which we drop the pre
+```{r}
+soybean_eliminated <- Soybean %>% dplyr::select(-c("sever", "hail", "seed.tmt", "lodging"))
+```
+
+
+We can train a basic Multinomial Logistic Regression model with our "bad" predictors eliminated
+```{r}
+elim_model <- multinom(Class ~ ., soybean_eliminated)
+
+# Print AIC which is a good measure of model complexity and goodness of fit
+elim_model$AIC
+```
+
+Now we can try to train another multinomial logistic regression model on imputed data to compare. We'll only imput our biggest offender predictors from above to reduce compute complexity
+```{r impute-soybean, warning=FALSE, message=FALSE}
+soybean_missing <- soybean_missing %>% dplyr::select(-c(Class))
+# Impute using mice
+soybean_missing_imputed <- mice(soybean_missing)
+```
+
+
+```{r}
+# Combine imputed and missing data
+soybean_imputed <- cbind(soybean_eliminated, soybean_missing_imputed$data)
+
+# Now we can train a Multinom Logistic Regression model on our imputed data
+impute_model <- multinom(Class ~ ., soybean_imputed)
+
+# Print AIC which is a good measure of model complexity and goodness of fit
+impute_model$AIC
+```
+
+We actually see a *higher* AIC on our imputed data, rather than our eliminated predictor data. This makes intuitive sense as one of the AIC inputs is the number of predictors. When we removed our missing predictors, we improved AIC in this sense.
 
 
 
