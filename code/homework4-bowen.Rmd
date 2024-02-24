@@ -22,6 +22,7 @@ library(caret)
 library(questionr)
 library(gridExtra)
 library(mice)
+library(vcd)
 ```
 
 ## Exercise 3.1 (*K&J*)
@@ -117,7 +118,7 @@ transformed_predict <- predict(transformed_model, test_transformed)
 (transformed_accuracy <- mean(transformed_predict == test_transformed$Type))
 ```
 
-We see comparable accuracy numbers out of a simpler model (fewer inputs, lwoer AIC value) for our transformed data. 
+We see comparable accuracy numbers out of a simpler model (fewer inputs; lower AIC value) for our transformed data. 
 
 ## Exercise 3.2 (*K&J*)
 
@@ -126,16 +127,27 @@ data(Soybean)
 head(Soybean)
 ```
 
-The `table` function in R can give 
+## Categorical Predictor Frequency Distributions
+
+The `table` function can be a helpful way to show the relative frequencies between categorical variables.
 ```{r}
-table(Soybean$plant.stand)
+table(Soybean$Class, Soybean$precip)
 ```
 
-One function that 
+
+However, we have 36 variables in our `Soybean` dataset, so that table would become rather busy quickly. We can produce some `mosaic` plots form the VCD library which can help us to visualize some of our class frequencies. Lets do this first for some features related to the weather a soyeban experienced, for example: `twemp`, `hail`, and `precip`
 ```{r}
-
-
+weather <- Soybean %>% dplyr::select(precip, hail, temp) %>% table()
+mosaic(weather, shade = TRUE)
 ```
+
+We can also plot some variables related to properties of the seed (e.g., `seed`, `seed.discolor`, `seed.size`). In this case, we see some larger class imbalance, specifically for the `see.discolor` and `seed.size` variables
+```{r}
+Soybean %>% dplyr::select(seed, seed.discolor, seed.size) %>% 
+  table() %>%
+  mosaic(shade = TRUE)
+```
+
 
 ### Missing Values
 
