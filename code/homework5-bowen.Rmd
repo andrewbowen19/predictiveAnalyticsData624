@@ -1,0 +1,76 @@
+---
+title: 'DATA 624: Homework 5'
+author: "Andrew Bowen"
+date: "2024-02-25"
+output: html_document
+---
+
+```{r setup## Exerciseinclude=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE## Exerciseecho=FALSE## Exercisewarning=FALSE}
+library(tsibble)
+library(tidyverse)
+library(feasts)
+library(fpp3)
+library(fabletools)
+library(tsibbledata)
+```
+
+
+## Exercise 8.1
+First, let's construct our time series for pigs slaughtere din Victoria and plot
+```{r}
+victoria_pigs <- aus_livestock %>% filter(Animal == "Pigs" & State == "Victoria")
+
+victoria_pigs %>% autoplot(Count)
+```
+
+There doesn't appread to be strong seasonality or a general overall trend in this time series, so simple exponential smoothing makes sense to use. Now, let's construct a model via the ETS function for SES. We'll mirror the techniques used in Hyndman
+```{r}
+# Fit model with only an error term to reflect SES
+fit <- victoria_pigs %>%
+  model(ETS(Count ~ error("A") + trend("N") + season("N")))
+fc <- fit |>
+  forecast(h = 4)
+```
+
+
+Plotting our forecast over our time series gives us the following
+```{r}
+# Plot victorian pigs model
+fc |>
+  autoplot(victoria_pigs) +
+  geom_line(aes(y = .fitted), col="#D55E00",
+            data = augment(fit)) +
+  labs(y="Number of Pigs", title="Victorian Pigs Slaughtered") +
+  guides(colour = "none")
+```
+
+To find the optimized values fo $\alpha$ and $l_0$, we can use the `report` function on our `fit` mable. We see optimized values for each parameter in our SES model below:
+```{r}
+fit %>% report()
+```
+
+
+## Exercise 8.5
+
+
+## Exercise 8.6
+
+
+## Exercise 8.7
+
+
+## Exercise 8.8
+
+
+## Exercise 8.9
+
+
+
+
+
+
+
