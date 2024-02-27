@@ -5,11 +5,11 @@ date: "2024-02-25"
 output: html_document
 ---
 
-```{r setup## Exerciseinclude=FALSE}
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r message=FALSE## Exerciseecho=FALSE## Exercisewarning=FALSE}
+```{r message=FALSE, echo=FALSE, warning=FALSE}
 library(tsibble)
 library(tidyverse)
 library(feasts)
@@ -55,13 +55,128 @@ fit %>% report()
 
 
 ## Exercise 8.5
+We can look at the export data from France
+```{r}
+# Add fill_gaps for later pltting/forecasting
+france <- global_economy %>% filter(Country == "France") %>% fill_gaps()
+head(france)
+```
 
+```{r plot-exports}
+france %>% autoplot(Exports)
+```
+While this data isn't strongly seasonal (no noticeable patterns), there is a general upward trend in this data that may need to be accounted for.
+
+Let's fit an $(A, N, N)$ ETS model to this dataset and forecast out 5 years
+```{r}
+france_fit <- france %>%
+  model(ETS(Exports ~ error("A") + trend("N") + season("N")))
+france_fc <- france_fit %>%
+  forecast(h = 5)
+```
+
+```{r plot-france-forecast}
+france_fc %>% autoplot(france) +
+  # geom_line(aes(y = .fitted), color="#456fd4" ,
+  #           data = augment(france_fit)) +
+  labs(y="Exports", title="French Export Forecast") +
+  guides(colour = "none")
+```
+Now we'cc ompute RMSE values for the training data ismilar to the [method used in Hyndman](https://otexts.com/fpp3/holt.html#example-internet-usage)
+```{r france-rmse}
+# Get accuracy, including RMSE
+acc_ANN <- france_fit %>% accuracy()
+acc_ANN
+```
+
+We see an RMSE of 1.152 on our trainging data (the `france` time series). We can compare this accuracy to an $(A, A, N)$ model on the same 
+
+```{r}
+france_fit_AAN <- france %>%
+  model(ETS(Exports ~ error("A") + trend("A") + season("N")))
+france_fc_AAN <- france_fit_AAN %>%
+  forecast(h = 5)
+
+# Display both accuracies
+acc_AAN <- france_fit_AAN %>% accuracy()
+rbind(acc_ANN, acc_AAN)
+```
+With an $(A, A, N)$ ETS model we see an improvement in our RMSE value. In this case a model with an (additive) trend term makes sense as the export series itself does have a general upward trend. In addition, the trend forecast (below with prediction intervals) does continue a general increase, which could be a resonable assumption for export data (generally, GDP/Export numbers will increase YoY). However, the non-trended forecaste does incorporate events that would break the upward trend (recession, etc.) better, and may be more realistic. In this case, a damped trended forecast could be a good "middle ground"
+
+```{r plot-france-aan}
+france_fc_AAN %>% autoplot(france)
+```
+##### Prediction Intervals
+
+Our general formula for a prediction interval is
+
+\begin{aligned}
+  \hat{y}_{T+h|T} = c\sigma_h
+\end{aligned}
+
+Where $c=1.96$ as our Z-score value for a 95% confidence interval, and $\signa_h$ is our forecast variance (given by the [Hyndman text here](https://otexts.com/fpp3/ets-forecasting.html#prediction-intervals-3))
+```{r}
+c = 1.96
+# Get residuals of ANN fit
+france_ANN_aug <- france_fit %>% augment()
+var_ann <- var(france_ANN_aug$.resid)
+
+france_ANN_aug$interval_lower <- france_ANN_aug$.fitted - c * var_ann
+france_ANN_aug$interval_upper <- france_ANN_aug$.fitted + c * var_ann
+
+# Get residuals of AAN fit
+france_AAN_aug <- france_fit_AAN %>% augment()
+var_aan <- var(france_AAN_aug$.resid)
+
+# Calculate values
+france_AAN_aug$interval_lower <- france_AAN_aug$.fitted - c * var_aan
+france_AAN_aug$interval_upper <- france_AAN_aug$.fitted + c * var_aan
+```
 
 ## Exercise 8.6
+```{r}
+china <- global_economy %>% filter(Country == "China")
 
+china_fit <- china %>% model(
+  `(A, A, N)` = ETS(Exports ~ error("A") + trend("A") + season("N")),
+  `(A, N, N)` = ETS(Exports ~ error("A") + trend("N") + season("N")),
+   `Damped Trend (A, A, N)` = ETS(Exports ~ error("A") +
+                                trend("Ad", phi = 0.9) + season("N"))
+  )
+china_fc<- china_fit %>%
+  forecast(h = 20)
+
+china_fc %>% autoplot(china) + labs(y="Exports", title="Forecasts of Chinese exports: 2018 - 2038")
+```
+
+Looking at this forecast of 20 years out, we see that the damped method (blue) tends to have a less "extreme" impact than the forecast with a trend. This helps to account for reversals in the trend that the naive additive method (with a trend term) does not always account for.
 
 ## Exercise 8.7
+```{r aus-gas}
+aus_gas <- aus_production %>% select(Gas)
+aus_gas %>% autoplot(Gas)
+```
+In this case, a multiplicative model would be bestsince the variance of our seasonality changes with time.
 
+```{r}
+gas_fit <- aus_gas %>% 
+    model(ETS(Gas ~ error("A") + trend("A") + season("M")))
+
+
+gas_fc <- gas_fit %>% forecast(h=4)
+
+```
+
+
+```{r plot-gas-forecast}
+# Plot gas forecast
+gas_fc %>% autoplot(aus_gas)
+```
+
+```{r}
+china_aug <- china_fit %>% augment()
+var(china_aug$.resid)
+```
 
 ## Exercise 8.8
 
