@@ -156,7 +156,7 @@ Looking at this forecast of 20 years out, we see that the damped method (blue) t
 aus_gas <- aus_production %>% select(Gas)
 aus_gas %>% autoplot(Gas)
 ```
-In this case, a multiplicative model would be bestsince the variance of our seasonality changes with time.
+In this case, a multiplicative model would be best since the variance of our seasonality changes with time.
 
 ```{r}
 gas_fit <- aus_gas %>% 
@@ -180,12 +180,113 @@ var(china_aug$.resid)
 
 ## Exercise 8.8
 
+```{r}
+set.seed(12345678)
+myseries <- aus_retail |>
+  filter(`Series ID` == sample(aus_retail$`Series ID`,1))
+```
+
+
+```{r}
+# Plot retail data
+myseries %>% autoplot()
+```
+
+In this case, multiplicative seasonality since the seasonal variance increases with time.
+
+Fitting Holt-Winters' multiplicative model to the retail data, we see the following:
+
+```{r}
+fit <- myseries |>
+  model(
+    multiplicative = ETS(Turnover ~ error("M") + trend("A") +
+                                                season("M")),
+    damped = ETS(Turnover ~ error("M") + trend("Ad") +
+                                                season("M"))
+  )
+fc <- fit |> forecast(h = "5 years")
+fc |>
+  autoplot(myseries) +
+  labs(title="Australian Retail Turnover",
+       y="Turnover") +
+  guides(colour = guide_legend(title = "Forecast"))
+```
+
+With a damped trend  (orange) we see a flattening of the forecast level with time, while the reegular trend method from Holt-Winters continues to increase in level. We can compare the RMSE of the two methods via the `accuracy` function:
+```{r}
+fit %>% accuracy()
+```
+We see a slightly better performance in terms of RMSE from the damped method as opposed to the regular trended method. We can check the residuals from the `aumented` method with our fit passed
+
+```{r}
+augmented <- fit %>% augment()
+hist(augmented$.resid)
+```
+
+```{r}
+train <- myseries %>% filter(Month < yearmonth("Jan 2011"))
+
+# Train a model on new test set with damped method
+fit_train <- train |> model(
+    damped = ETS(Turnover ~ error("M") + trend("Ad") +
+                                                season("M"))
+  )
+
+
+fc <- fit_train |> forecast(h = "10 years")
+fc |>
+  autoplot(train) +
+  labs(title="Australian Retail Turnover",
+       y="Turnover") +
+  guides(colour = guide_legend(title = "Forecast"))
+
+```
+
+Now let's look at the RMSE of our fit trained up until 2011, we see a better RMSE than our other model from exercise 5.7 ($0.51 < 1.51$)
+```{r}
+fit_train %>% accuracy()
+```
 
 ## Exercise 8.9
+We can transform our retail timeseries via the same method applied 
+```{r box-cox-retail}
+lambda <- train %>%
+  features(Turnover, features = guerrero) %>%
+  pull(lambda_guerrero)
 
+# Transform turnover series based on returned lambda
+train$turnover_bc <- box_cox(train$Turnover, lambda=lambda)
 
+train %>% autoplot(turnover_bc) + labs(title="Box-Cox transformed Australian Retail Turnover")
+```
 
+Now that we have our Box-Cox transformed series, we
+```{r}
+# Fit an STL
+fit_bc_stl <- train %>% model(
+  STL(turnover_bc)
+)
 
+comp_bc <- components(fit_bc_stl) 
+comp_bc %>% autoplot()
+```
 
+Now we can apply `ETS` on the seasonally-adjusted data from our `comp` variable
 
+```{r ets-seasonal-adj}
+fit_bc_ets <- comp_bc %>% as_tsibble() %>%
+  model(
+    seasonal_adjustment = ETS(season_adjust ~ error("A") + trend("A"))
+  ) %>% dplyr::select(-c(.model))
+
+# forecast based on our box-cox transformed seasonally-adjusted data
+fc_bc <- fit_bc_ets %>% 
+  forecast(h=3)
+
+fc_bc |>
+  autoplot(comp_bc) +
+  labs(title="Seasonally-Adjusted Australian Retail Turnover: Box-Cox ",
+       y="Turnover") +
+  guides(colour = guide_legend(title = "Forecast"))
+```
 
