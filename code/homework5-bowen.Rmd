@@ -232,8 +232,8 @@ fit_train <- train |> model(
                                                 season("M"))
   )
 
-
-fc <- fit_train |> forecast(h = "10 years")
+prediction_interval <- "10 years"
+fc <- fit_train |> forecast(h = prediction_interval)
 fc |>
   autoplot(train) +
   labs(title="Australian Retail Turnover",
@@ -281,12 +281,8 @@ fit_bc_ets <- comp_bc %>% as_tsibble() %>%
 
 # forecast based on our box-cox transformed seasonally-adjusted data
 fc_bc <- fit_bc_ets %>% 
-  forecast(h=3)
+  forecast(h=prediction_interval)
 
-fc_bc |>
-  autoplot(comp_bc) +
-  labs(title="Seasonally-Adjusted Australian Retail Turnover: Box-Cox ",
-       y="Turnover") +
-  guides(colour = guide_legend(title = "Forecast"))
+fit_bc_ets %>% accuracy()
 ```
-
+Here we see a *much* lower RMSE value of 0.089. This is an improvement on the models above

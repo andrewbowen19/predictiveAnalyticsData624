@@ -1,0 +1,125 @@
+---
+title: 'DATA 624: Project 1'
+author: "Andrew Bowen"
+date: "2024-03-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, include=FALSE}
+library(tidyverse)
+library(feasts)
+library(fpp3)
+library(fabletools)
+library(readxl)
+library(tsibble)
+```
+
+
+# Part A
+In this part, we'll be attempting to forecast how much cash is taken out of 4 different ATM machines for May 2010. Our dataset is provided for us, and available on my GitHub. 
+
+## Data Wrangling and Visualization
+
+Our `DATE` column looks to be the number of days since 1900, so we 
+
+```{r}
+# Read in our ATM data
+atm <- read_excel("../data/ATM624Data.xlsx")
+
+# Store ATM data in a tsibble object
+atm <- atm %>%  
+  mutate(DATE = as.Date(DATE, origin = "1899-12-30")) %>% as_tsibble(index=DATE, key=ATM) %>% fill_gaps()
+```
+
+
+To start off with, let's plot our `atm` tsibble to get a sense of the data. We see that we have data for 4 ATMs, with some `NA` values for 
+```{r plot-atm, warning=FALSE, message=FALSE}
+atm %>% autoplot() + labs(x = "Date", y="Cash Withdrawn (Hundred of Dollars)", title="Cash withdrawn from ATMs 1-4: May 2009 - May 2010")
+```
+
+In our case, the `NA` values for the `ATM` variable all occur in May 2010, which is the month we are trying to predict. In this case, we should be able to drop these rows for now, with the intention of "re-adding" them later when we forecast
+```{r filter-atm-na}
+# Filter null ATM rows for later forecasting replacement
+atm <- atm %>% filter(!is.na(ATM))
+```
+
+
+```{r plot-atm-no-na, warning=FALSE, message=FALSE}
+atm %>% autoplot() + labs(x = "Date", y="Cash Withdrawn (Hundred of Dollars)", title="Cash withdrawn from ATMs 1-4: May 2009 - May 2010")
+```
+## Imputation
+As a result of our `fill_gaps` call above, we're left with some NA values in our time series. We can find the mean cash withdrawn per ATM varies between the machines
+
+```{r atm-mean}
+mean_cash_by_atm <- atm %>% 
+     filter(!is.na(Cash)) %>%
+     as_tibble %>% 
+     group_by(ATM) %>% 
+     summarise(Cash = mean(Cash))
+mean_cash_by_atm
+```
+
+As such, it makes more sense to impute *per ATM*, rather than taking the blanket mean of our `Cash` variable.
+
+```{r atm-imputation}
+atm <- atm %>% group_by(ATM) %>%
+  mutate(Cash = ifelse(is.na(Cash), 
+                       mean(Cash, na.rm=TRUE), 
+                       Cash)) %>%
+  ungroup()
+
+atm %>% autoplot()
+```
+
+## Outliers
+We see a strong outlier point around February 2010, in which it appears a value of $\$1,092,000$ was withdrawn. There is a chance that this outlier is due to an internal error within the data collection process, so we'll have to handle that as well. For our purposes, we can replace that outlier value with
+
+```{r fix-atm-outliers}
+atm_with_outlier <- atm # Save TS with outlier for later comparison
+outlier_limit <- 3000
+atm_outlier <- atm %>% filter(Cash > outlier_limit) %>% mutate(Cash = mean(atm$Cash))
+
+# Remove outlier row and add in "impoted" value
+atm <- atm %>% filter(Cash < outlier_limit)
+
+atm <- bind_rows(atm, atm_outlier)
+
+# Plot 
+atm %>% autoplot()
+
+```
+
+Finally, let's plot our time series *without* `ATM4`, which tends to drown out the other ATM withdrawal values in terms of scale
+
+```{r plot-other-outliers}
+atm %>% filter(ATM != "ATM4") %>% autoplot(Cash)
+```
+
+
+## Decomposition
+These time series appear to not have a strong overall trend upwards or downwards. However, there does appear to be a seasonal component. In our case, the seasonal variation **does not** change with time, so an additive decomposition may be better than a multiplicative one:
+```{r atm-decomp, warning=FALSE, message=FALSE}
+atm  %>% model(
+    classical_decomposition(Cash, type = "additive")
+  ) %>%
+  components() %>%
+  autoplot() +
+  labs(title = "Classical Decomposition fo ATM data")
+```
+
+## Modeling
+
+
+
+# Part B
+
+
+
+
+# Part C
+
+
