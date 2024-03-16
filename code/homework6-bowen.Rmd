@@ -1,0 +1,252 @@
+---
+title: 'DATA 624: Homework 6'
+author: "Andrew Bowen"
+date: "2024-03-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries include=FALSE, message=FALSE, echo=FALSE}
+library(tidyverse)
+library(fabletools)
+library(tsibble)
+library(tsibbledata)
+library(feasts)
+library(fpp3)
+```
+
+## Exercise 9.1
+This set of correlograms shows white noise for different sets of random numbers. The dashed blue lines represent the level at which the autocorelation (y-axis) becomes significantly different than 0. These plots do not have any lag periods (x-axis) past the blue dashed line, which means that For plot *a*, we do see a more storng auto-correlation at a lag period of $k=4$
+
+The blue lines are different distances from zero because fo reach dataset there may be a different level of statistical significance for autocorrelation. Hence, different 
+
+## Exercise 9.2
+First let's plot the amazon closing stock price time series:
+```{r}
+amazon <- gafa_stock %>% filter(Symbol == "AMZN")
+
+amazon %>% autoplot(Close)  + 
+  labs(x = "Date", y="Closing Price ($)", title="Amazon Closing Stock Prices")
+```
+
+This plot is non stationary because the level of the time series changes with time, so properties of the time series (in this case, the level) *do* depend on time.
+
+Now we can plot the ACF and PACF of this time series
+```{r amazon-acf}
+amazon |> ACF(Close) |>
+  autoplot() + labs(x = "Lag", y="Autocorrelation", title="Autocorrelation of Amazon Closing Stock Prices")
+```
+In this case, we see stroong autocorrelation (above the threshold) for all lags, indicating a non-stationary time series. This validates what we saw above in the simple time series plot
+
+No we can plot the partial autocorrelation function (PACF) plot
+```{r amazon-pacf}
+# Plot PACF
+amazon %>% PACF(Close) %>%
+  autoplot() + labs(x = "Lag", y="Autocorrelation", title="Autocorrelation of Amazon Closing Stock Prices")
+
+```
+In a partial autocorrelation function plot, the lags prior to a given lag period are removed. In this case, we see a strong correlation with a lag $k=1$, which makes sense given the strong trend int his time series. Besides that, there are some stronger autocorrelations at $k = 5, 19, 25$, but fewer lags whihc would be considered statistically significant. In this case, we're still observing non-stationarity, given the autocorrelations present, but this plot presents a cleaner picture.
+
+
+## Exercise 9.3
+
+#### Turkish GDP
+```{r}
+# First set up our turkish time series
+turkey <- global_economy %>% filter(Country == "Turkey")
+
+turkey %>% autoplot(GDP) + 
+  labs(x="Year", y="GDP", title="Turkish GDP")
+```
+There isn't much seasonality here, but there is a strong upwards trend, especially after 1990.
+
+```{r}
+lambda_turkey <- turkey |> features(GDP, features = guerrero) |>
+  pull(lambda_guerrero)
+# Print out optimal lambda value
+print(lambda_turkey)
+
+turkey$GDP_transformed <- box_cox(turkey$GDP, lambda_turkey)
+
+turkey %>% autoplot(GDP_transformed) + 
+  labs(x="Year", y="GDP (Box-Cox)", title="Turkish GDP: Box-Cox Transformed")
+```
+Now we can use differencing to stabilize the mean of our time series
+```{r}
+turkey$GDP_diff <- difference(turkey$GDP_transformed)
+turkey %>% ACF(difference(GDP_transformed)) %>% autoplot()
+```
+With a differencing of our box-cox transformed GDP data, we see no autocorrelation now
+```{r}
+turkey %>% autoplot(GDP_diff)
+```
+Visually, this looks to be much more stationary data!
+
+#### Tasmanian Accomodations
+```{r}
+tasmania <- aus_accommodation %>% filter(State == "Tasmania")
+
+tasmania %>% autoplot(Takings)
+```
+
+Given this time series' variance with time, we'll want to undergo a Box-cox transformation to reduce that variance over time
+```{r}
+lambda_tasmania <- tasmania |> features(Takings, features = guerrero) |>
+  pull(lambda_guerrero)
+# Print out optimal lambda value
+print(lambda_tasmania)
+
+tasmania$Takings_transformed <- box_cox(tasmania$Takings, lambda_tasmania)
+
+tasmania %>% autoplot(Takings_transformed) + 
+  labs(x="Year", y="Takings (transformed)", title="Tasmanian Accommodations: Box-Cox Transformed")
+```
+This helps to even out the level of the variance with time, now we can apply differencing to get stationary data
+```{r warning=FALSE}
+tasmania$takings_diff <- difference(tasmania$Takings_transformed)
+
+# Plot differenced data
+tasmania %>% autoplot(takings_diff)
+```
+This data looks much more stationary, which we want!
+
+#### Souvenir Sales
+First, let's plot the monthly souvenir sales data
+```{r}
+souvenirs %>% autoplot()
+```
+Again, the level of variance for this time series does change with time, so we'll have to apply a transformation, we'll use Box-Cox
+```{r}
+lambda_souvenir <- souvenirs |> features(Sales, features = guerrero) |>
+  pull(lambda_guerrero)
+# Print out optimal lambda value
+print(lambda_souvenir)
+
+souvenirs$sales_transformed <- box_cox(souvenirs$Sales, lambda_souvenir)
+
+souvenirs %>% autoplot(sales_transformed ) + 
+  labs(x="Year", y="Souvenir Sales (transformed)", title="Monthly Souvenir Sales: Box-Cox Transformed")
+```
+
+Now we'll apply differencing to the box-cox transformed souvenir sales data
+
+```{r warning=FALSE}
+souvenirs$sales_diff <- difference(souvenirs$sales_transformed)
+
+# Plot differenced data
+souvenirs %>% autoplot(sales_diff) + labs(x="Month", y="Sales (Differenced & Transformed)", title="Monthly Souvenir Sales: Differenced & Transformed")
+```
+Again, we see stationarity here, which we can then pass to an ARIMA model.
+
+## Exercise 9.5
+First, let's set up the time series from [Exercise 2.7](https://otexts.com/fpp3/graphics-exercises.html#graphics-exercises)
+```{r}
+set.seed(12345678)
+myseries <- aus_retail |>
+  filter(`Series ID` == sample(aus_retail$`Series ID`,1))
+
+myseries %>% autoplot()
+```
+Given the variance of our seasonal changes is not constant, we'll likely need to transform this data *before* differencing. In this case, let's try a simple logarithm transformation
+
+Now, let's apply both seasonal differencing and double differencing (applied to seasonally differenced data). We'll mirror the [method used in Hyndman to create our plots](https://otexts.com/fpp3/stationarity.html#seasonal-differencing)
+```{r}
+myseries %>%
+  transmute(
+    `Turnover` = `Turnover`,
+    `Log Turnover` = log(Turnover),
+    `Seasonal Diff` = difference(log(Turnover), 12),
+    `Doubly Differenced` =
+                     difference(difference(log(Turnover), 12), 1)
+  ) |>
+  pivot_longer(-Month, names_to="Type", values_to="Turnover") |>
+  mutate(
+    Type = factor(Type, levels = c(
+      "Turnover",
+      "Log Turnover",
+      "Seasonal Diff",
+      "Doubly Differenced"))
+  ) |>
+  ggplot(aes(x = Month, y = Turnover)) +
+  geom_line() +
+  facet_grid(vars(Type), scales = "free_y") +
+  labs(title = "Retail Turnover", y = NULL)
+```
+
+The double-differencing plot appears to be the most stationary, so a differencing order of 2 seems to be appropriate here.
+
+## Exercise 9.6
+```{r}
+# Code form Hyndman
+y <- numeric(100)
+e <- rnorm(100)
+for(i in 2:100)
+  y[i] <- 0.6*y[i-1] + e[i]
+sim <- tsibble(idx = seq_len(100), y = y, index = idx)
+```
+
+```{r}
+# Plot time plot
+sim %>% autoplot()
+```
+Let's alter our value to be $\phi_1 = 0.95$ value to see how that changes the plot
+
+```{r}
+
+y <- numeric(100)
+e <- rnorm(100)
+for(i in 2:100)
+  y[i] <- 0.95*y[i-1] + e[i]
+sim <- tsibble(idx = seq_len(100), y = y, index = idx)
+sim %>% autoplot()
+```
+Here we see bigger variations and data that could quite possibly not be stationary.
+
+Now we'll geenrate data from our own MA(1) model and plot it
+```{r}
+# Custom MA(1) model
+y <- numeric(100)
+e <- rnorm(100)
+theta <- 0.6
+for(i in 2:100)
+  y[i] <- y[i-1] + theta * e[i]
+sim <- tsibble(idx = seq_len(100), y = y, index = idx)
+sim %>% autoplot()
+```
+Now let's try a different value for $\theta_1 = 0.8$
+
+```{r}
+y <- numeric(100)
+e <- rnorm(100)
+theta <- 0.8
+for(i in 2:100)
+  y[i] <- y[i-1] + theta * e[i]
+sim <- tsibble(idx = seq_len(100), y = y, index = idx)
+sim %>% autoplot() + labs("MA(1) Model: Altered Theta")
+```
+There's much more of a trend in this generated data. Now we can generate data from an ARIMA model
+
+```{r}
+y <- numeric(100)
+e <- rnorm(100)
+theta <- 0.6
+phi <- 0.6
+for(i in 2:100)
+  y[i] <- phi * y[i-1] + theta * e[i]
+sim <- tsibble(idx = seq_len(100), y = y, index = idx)
+sim %>% autoplot() + labs("ARIMA Model")
+```
+
+
+## Exercise 9.7
+
+
+
+## Exercise 9.8
+
+
+

@@ -108,7 +108,7 @@ france_fc_AAN %>% autoplot(france)
 ```
 ##### Prediction Intervals
 
-Our general formula for a prediction interval is
+Our general formula for a prediction interval is:
 
 \begin{aligned}
   \hat{y}_{T+h|T} = c\sigma_h
@@ -116,6 +116,7 @@ Our general formula for a prediction interval is
 
 Where $c=1.96$ as our Z-score value for a 95% confidence interval, and $\signa_h$ is our forecast variance (given by the [Hyndman text here](https://otexts.com/fpp3/ets-forecasting.html#prediction-intervals-3))
 ```{r}
+
 c = 1.96
 # Get residuals of ANN fit
 france_ANN_aug <- france_fit %>% augment()
@@ -131,6 +132,12 @@ var_aan <- var(france_AAN_aug$.resid)
 # Calculate values
 france_AAN_aug$interval_lower <- france_AAN_aug$.fitted - c * var_aan
 france_AAN_aug$interval_upper <- france_AAN_aug$.fitted + c * var_aan
+head(france_AAN_aug)
+```
+
+Alternatively, e can use the `hilo` method as well to construct a 95% confidence interval
+```{r, warning=FALSE}
+france_fc_AAN %>% hilo(level = c(95))
 ```
 
 ## Exercise 8.6

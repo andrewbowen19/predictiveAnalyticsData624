@@ -116,8 +116,16 @@ atm  %>% model(
 
 
 # Part B
+In this part we'll be lookign at residential power usage between 1998 and 2010.
+```{r power-read-in}
+# Read in our Power Usage data
+usage <- read_excel("../data/ResidentialCustomerForecastLoad-624.xlsx")
 
-
+# Store ATM data in a tsibble object
+usage %>% 
+     rename(Date = `YYYY-MMM`) %>% 
+     mutate(Date = yearmonth(Date))
+```
 
 
 # Part C
