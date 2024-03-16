@@ -10,7 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r libraries include=FALSE, message=FALSE, echo=FALSE}
+```{r libraries, include=FALSE, message=FALSE, echo=FALSE}
 library(tidyverse)
 library(fabletools)
 library(tsibble)
@@ -215,7 +215,7 @@ theta <- 0.6
 for(i in 2:100)
   y[i] <- y[i-1] + theta * e[i]
 sim <- tsibble(idx = seq_len(100), y = y, index = idx)
-sim %>% autoplot()
+sim %>% autoplot() + labs(title="Moving Avergae (1) Model")
 ```
 Now let's try a different value for $\theta_1 = 0.8$
 
@@ -226,7 +226,7 @@ theta <- 0.8
 for(i in 2:100)
   y[i] <- y[i-1] + theta * e[i]
 sim <- tsibble(idx = seq_len(100), y = y, index = idx)
-sim %>% autoplot() + labs("MA(1) Model: Altered Theta")
+sim %>% autoplot() + labs(title="MA(1) Model: Altered Theta")
 ```
 There's much more of a trend in this generated data. Now we can generate data from an ARIMA model
 
@@ -238,12 +238,46 @@ phi <- 0.6
 for(i in 2:100)
   y[i] <- phi * y[i-1] + theta * e[i]
 sim <- tsibble(idx = seq_len(100), y = y, index = idx)
-sim %>% autoplot() + labs("ARIMA Model")
+sim %>% autoplot() + labs(title="ARIMA Model")
 ```
+Now we'll generate from an AR(2) model. This includes a term fo $y_{t-2}$, which 
+
+```{r}
+y <- numeric(100)
+e <- rnorm(100)
+phi_1 <- 0.6
+phi_2 <- 0.3
+for(i in 3:100)
+  y[i] <- phi_1 * y[i-1] + phi_2 * y[i - 2]  + e[i]
+sim <- tsibble(idx = seq_len(100), y = y, index = idx)
+
+sim %>% autoplot()
+```
+With these parameters, this series does in fact look to be non-stationary, whereas the data generated from the ARIMA model above does appear to be more stationary overall (no significant jumps in the level of the time series at a given time).
 
 
 ## Exercise 9.7
+We'll let ARIMA select parameters for the `aus_airpassengers` time series
+```{r}
+# Allow ARIMA to select parameters
+aus_fit <- aus_airpassengers %>% model(ARIMA(Passengers))
 
+aus_fit %>% forecast(h=10) %>% autoplot(aus_airpassengers)
+
+```
+
+In this case a value was selected of `ARIMA(0, 2, 1)` for this time series. We have no autoregressive terms in our model, and an order of 2 for the differencing term. There is one moving average term. Lastly, Using backshift notation, this model could be written as:
+
+\begin{aligned}
+  0 = (1 - B^2)(1 - \theta B)y_t + \epsilon_t
+\end{aligned}
+
+Where $\epsilon_t$ is our error (white noise) and [B is the backshift operator](https://otexts.com/fpp3/backshift.html) ($By_t = y_{t-1}$). When expanded out, we get the equation:
+
+\begin{aligned}
+  0 = y_t(1 + \theta B^3 - \theta B - B^2) + \epsilon_t \newline
+     = y_t - \theta y_{t-3} - \theta y_{t-1} - y_{t-2} + \epsilon_t 
+\end{aligned}
 
 
 ## Exercise 9.8
