@@ -228,9 +228,10 @@ for(i in 2:100)
 sim <- tsibble(idx = seq_len(100), y = y, index = idx)
 sim %>% autoplot() + labs(title="MA(1) Model: Altered Theta")
 ```
-There's much more of a trend in this generated data. Now we can generate data from an ARIMA model
+There's much more of a trend in this generated data. Now we can generate data from an ARMA(1,1) model
 
 ```{r}
+# ARMA(1, 1)
 y <- numeric(100)
 e <- rnorm(100)
 theta <- 0.6
@@ -238,7 +239,7 @@ phi <- 0.6
 for(i in 2:100)
   y[i] <- phi * y[i-1] + theta * e[i]
 sim <- tsibble(idx = seq_len(100), y = y, index = idx)
-sim %>% autoplot() + labs(title="ARIMA Model")
+sim %>% autoplot() + labs(title="ARMA(1,1) Model Data Generation")
 ```
 Now we'll generate from an AR(2) model. This includes a term fo $y_{t-2}$, which 
 
@@ -256,13 +257,17 @@ sim %>% autoplot()
 With these parameters, this series does in fact look to be non-stationary, whereas the data generated from the ARIMA model above does appear to be more stationary overall (no significant jumps in the level of the time series at a given time).
 
 
+
 ## Exercise 9.7
 We'll let ARIMA select parameters for the `aus_airpassengers` time series
 ```{r}
-# Allow ARIMA to select parameters
-aus_fit <- aus_airpassengers %>% model(ARIMA(Passengers))
+# Apply differencing to obtain stationary data
+aus_passengers <- aus_airpassengers%>% 
+  transmute(Passengers = difference(Passengers)) 
 
-aus_fit %>% forecast(h=10) %>% autoplot(aus_airpassengers)
+
+# Fit auto-selected ARIMA model
+aus_fit <- aus_passengers %>% model(ARIMA(Passengers)) %>% forecast(h=10) %>% autoplot(aus_passengers)
 
 ```
 
@@ -280,7 +285,118 @@ Where $\epsilon_t$ is our error (white noise) and [B is the backshift operator](
 \end{aligned}
 
 
+Now let's create an `ARIMA(0, 1, 0)` model with drift for comparison
+```{r}
+# Allow ARIMA to select parameters
+aus_fit <- aus_passengers %>% model(ARIMA(Passengers ~ pdq(0,1,0)))
+
+aus_fit %>% forecast(h=10) %>% autoplot(aus_passengers)
+```
+
+The forecast from an ARIMA(0, 1, 0) model is a bit flatter than in part a.
+
+```{r}
+# Adding a constant to the formula
+aus_fit <- aus_passengers %>% model(ARIMA(Passengers ~ 1 + pdq(2,1,2)))
+
+aus_fit %>% forecast(h=10) %>% autoplot(aus_passengers)
+```
+
+For the ARMA(2,1,2) model, we see some "wiggle" within the prediction interval. This is different than the forecasts above, which tended to be more linear. We can remove the constant
+
+```{r}
+# Removing a constant from the formula
+aus_fit <- aus_passengers %>% model(ARIMA(Passengers ~ PDQ(2,1,2)))
+
+aus_fit %>% forecast(h=10) %>% autoplot(aus_passengers)
+```
+With no constant in front, there's a more linear prediction, with a stronger increase.
+
+```{r}
+# Removing a constant from the formula
+aus_fit <- aus_passengers %>% model(ARIMA(Passengers ~ 1 + pdq(0,2,1)))
+
+aus_fit %>% forecast(h=10) %>% autoplot(aus_passengers)
+```
+In this case we see an even sharper slope in our prediction. 
+
 ## Exercise 9.8
+First, we'll visualize the series representing the US GDP over time
+```{r}
+us_economy <- global_economy %>% filter(Country == "United States")
 
+# Plot the series
+us_economy %>% autoplot(GDP) + labs(x="Year", y="GDP", title="United States GDP over time")
+```
 
+Given this is **not** seasonal data, and the variance of the series does not change over time, a Box-Cox transformation. Visually, this series is **not** stationary as the level of the time series changes over time, but we can verify with an [Augmented Dickey-Fuller Test](https://www.r-bloggers.com/2022/06/augmented-dickey-fuller-test-in-r/) with a **null hypothesis that our time series is non-stationary** at a significance level $\alpha0.05$
 
+```{r}
+# Run augmented Dickey-Fuller against GDOP time series
+adf.test(us_economy$GDP)
+```
+
+We see a p-value greater than our $\alpha$ so we cannot reject the null and must assume this series is non-stationary. We can fit an ARIMA model to our data using the automated selection process in `fable`
+
+```{r}
+# First, apply first-order differencing
+us_economy <- us_economy %>% 
+  transmute(GDP = difference(GDP)) 
+
+us_fit <- us_economy%>%
+  model(ARIMA(GDP))
+
+us_fit
+```
+We receive an optimized ARIMA selection with parameters (0,1,2). Let's forecast 10 years out and plot the results for later comparison
+```{r}
+# ARIMA(0,2,2)
+us_fit %>% forecast(h=10) %>% autoplot(us_economy) +
+  labs(x="Year", y="GDP", title="US 10-year GDP Forecast: ARIMA(0,1,2)")
+```
+
+Let's try fitting some different ARIMA combinations. These are a bit arbitrary, but should help to illustrate differences between these parameter combinations when applied to datasets like this one.
+
+```{r}
+# Fit 3 arima models
+us_fit1 <- us_economy %>% model(
+  `ARIMA-0-1-1` = ARIMA(GDP ~ pdq(0,1,1)),
+  `ARIMA-0-2-0` = ARIMA(GDP ~ pdq(0,2,0)),
+  `ARIMA-0-2-1` = ARIMA(GDP ~ pdq(0,2,1)),
+)
+
+```
+
+We can use `gg_tsresiduals` to plot the residual diagnostics for one of our models (in this case ARIMA(0,2,1))
+
+```{r arima-residuals, warning=FALSE}
+# Look at residuals for selected model
+us_fit1 |> select("ARIMA-0-2-1") |> gg_tsresiduals() + labs(title="Redisual Disgnostics: ARIMA(0,2,1) for US GDP Data")
+```
+
+We see some lags with slight autocorrelations at $k=7$ for the ARIMA(0,2,1) model. The residuals look relatively normal, with a slight outlier including the Great Recession in 2008. We can produce forecasts for all 3 models we generated in one plot:
+
+```{r}
+# Plot all 3 models
+us_fc <- us_fit1 %>% forecast(h=10) 
+
+us_fc %>% autoplot(us_economy) +
+  labs(x="Year", y="GDP", title="US 10-year GDP Forecast: ARIMA(0,2,2)")
+```
+
+Visually, the `ARIMA(0, 2, 1)` model seems the most reasonable from the forecasts produced. Lastly, we'll generate an ETS model to compare to our ARIMA models
+
+```{r gdp-ets}
+ets_us <- global_economy %>% filter(Country == "United States") %>% model(ETS(GDP))
+
+ets_us %>% gg_tsresiduals() + labs(title="Redisual Disgnostics: ETS for US GDP Data")
+```
+
+Here we see less lags with significant autocorrelations, though our residuals do look to be less normally distributed. Let's produce an ETS forecast
+```{r}
+series <-  global_economy %>% filter(Country == "United States")
+ets_fc <- ets_us %>% forecast(h=10) 
+ets_fc %>% autoplot(series)
+```
+
+We see a wider prediction interval for our ETS predictions, with a general trend increase. 
