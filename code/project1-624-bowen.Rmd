@@ -120,15 +120,26 @@ Now we need to get to actually build a model to predict the amount of cash taken
 ```{r}
 adf.test(atm$Cash)
 ```
-In this case, we see a p-value of 0.01, so we can reject the null hypothesis and assume our time series is stationary.
+In this case, we see a p-value of 0.01, so we can reject the null hypothesis and assume our time series is stationary. This means we **won't** have to apply differencing to our data, since it's already stationary.
 
+Let's also take a look at the ACF plot of our data. We see significant weekly lags (7 days) with autocorrelation. In simpler terms, ATM users tend to withdraw similar amounts depending on the day of the week.
+
+```{r atm-acf}
+# Plot the ACF of our ATM time series
+atm %>% ACF(Cash) %>% autoplot()
+```
+We can also look at a lag plot for our data. Here we see a similar pattern from our ACF plot, with a strong autocorrelation at a lag of 7 (weekly).
+```{r}
+atm %>% filter(ATM == "ATM1") %>% gg_lag(geom="point")
+```
+Now we can fit an ARIMA model to the ATM dataset. When using ARIMA in fable, the default behavior is that model parameters are automatically selected. 
 ```{r atm-arima}
 atm_fit <-atm %>% model(ARIMA(Cash))
 
 atm_fit
 ```
 
-Our `mable` for the ATM dataset contains an ARIMA model per panel (in this case, per ATM). Each ARIMA model contains different values for $p, q, d$ as parameters. 
+Our `mable` for the ATM dataset contains an ARIMA model per panel (in this case, per ATM series). Each ARIMA model contains different values for $p, q, d$ as parameters. 
 
 ```{r atm-arima-forecast}
 # Forecast and plot
@@ -143,8 +154,9 @@ atm_fc %>% autoplot(atm) + labs(x="Date",
 Our forecasts look reasonable visually, but we'll 
 
 
-Finally, we can write our output dataset to a CSV which can be read into excel. The output can be found on my [GitHub here]()
+Finally, we can write our output dataset to a CSV which can be read into excel. The output can be found on my [GitHub here](https://github.com/andrewbowen19/predictiveAnalyticsData624/blob/main/data/atm-predictions.csv)
 ```{r}
+# Write predictions to CSV
 atm_fc %>% dplyr::select("ATM", "DATE", "Cash", ".mean") %>%
   dplyr::rename( "prediction" =".mean") %>%
   write_excel_csv(file="../data/atm-predictions.csv")
