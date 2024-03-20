@@ -78,14 +78,14 @@ atm %>% autoplot()
 ```
 
 ## Outliers
-We see a strong outlier point around February 2010, in which it appears a value of $\$1,092,000$ was withdrawn. There is a chance that this outlier is due to an internal error within the data collection process, so we'll have to handle that as well. For our purposes, we can replace that outlier value with
+We see a strong outlier point around February 2010, in which it appears a value of $\$1,092,000$ was withdrawn. There is a chance that this outlier is due to an internal error within the data collection process, so we'll have to handle that as well. For our purposes, we can replace that outlier value with a simple mean of the time series. 
 
 ```{r fix-atm-outliers}
 atm_with_outlier <- atm # Save TS with outlier for later comparison
 outlier_limit <- 3000
 atm_outlier <- atm %>% filter(Cash > outlier_limit) %>% mutate(Cash = mean(atm$Cash))
 
-# Remove outlier row and add in "impoted" value
+# Remove outlier row and add in "imputed" value
 atm <- atm %>% filter(Cash < outlier_limit)
 
 atm <- bind_rows(atm, atm_outlier)
@@ -170,13 +170,99 @@ In this part we'll be looking at residential power usage between 1998 and 2010. 
 usage <- read_excel("../data/ResidentialCustomerForecastLoad-624.xlsx")
 
 # Store ATM data in a tsibble object
-usage %>% 
+usage <- usage %>% 
      rename(Date = `YYYY-MMM`) %>% 
-     mutate(Date = yearmonth(Date))
+     mutate(Date = yearmonth(Date)) %>%
+     as_tsibble(index=Date)
 ```
 
 
+First, we'll plot the data
 
+```{r plot-usage}
+usage %>% autoplot(KWH)
+```
+
+Visually, we see an outlier point around July 2010 we'll likely need to deal with. We also see some missing values in addition to our seasonal data.
+
+## Data Wrangling
+We need to deal with 2 data quality issues before we can build a predictve model and forecast:
+
+1. Missing values
+2. Outliers
+
+First, we'll impute missing values with the mean value of our timeseries
+```{r}
+# Naive mean imputation
+usage$KWH <- ifelse(is.na(usage$KWH), mean(usage$KWH, na.rm=TRUE), usage$KWH)
+
+# Should be empty
+usage %>% filter(is.na(usage$KWH))
+```
+
+Next we'll remove our outlier point as well.
+
+```{r}
+# First, impute the outlier point to the mean
+limit <- 3000000
+usage$KWH <- ifelse(usage$KWH < limit, mean(usage$KWH, na.rm=TRUE), usage$KWH)
+
+
+lambda <- usage %>% features(KWH, features = guerrero) |>
+  pull(lambda_guerrero)
+# Print out optimal lambda value
+# print(lambda)
+
+usage$KWH_transformed <- box_cox(usage$KWH, lambda)
+
+usage %>% autoplot(KWH_transformed) + 
+  labs(x="Month", y="Kilowatt-Hours (Box-Cox)", title="Power Usage: Box-Cox Transformed")
+```
+
+
+## Modeling
+
+Let's check again for stationarity in our dataset via the Augmented Dickey Fuller test similar to above. 
+```{r}
+adf.test(usage$KWH_transformed)
+```
+Again, we see a p-value less than 0.05, so we can reject the null hypothesis and assume our time series is stationary. This means we again **won't** have to apply differencing to our data. In this case as well, the variance of our seasonal fluctuations also does not change with time, so we won't need to transform the data (via Box-Cox or other methods).
+
+
+Let's also take a look at the autocorrelation plots
+```{r}
+usage %>% ACF(KWH_transformed) %>% autoplot()
+```
+
+We see some strong seasonality with our data from the ACF plot, which is to be expected as we're dealing with highly seasonal data.
+
+First, let's create some models aligning with the [basic methods enumerated in Hyndman](https://otexts.com/fpp3/simple-methods.html). We can use the naive
+```{r}
+usage_fit <- usage %>%
+  model(
+    Mean = MEAN(KWH_transformed),
+    `Naïve` = NAIVE(KWH_transformed),
+    `Seasonal naïve` = SNAIVE(KWH_transformed)
+  )
+
+usage_fit %>% forecast(h=5) %>% autoplot(usage)
+```
+
+
+We could also apply an ARIMA model here. In this case, we'll want a seasonal ARIMA model
+```{r}
+usage_arima <- usage %>% model(ARIMA(KWH_transformed))
+
+usage_fc <- usage_arima %>% forecast(h=12)
+
+usage_fc %>% autoplot(usage)
+```
+
+Lastly, we'll write our forecasted values (including April 201)
+
+```{r}
+usage_fc %>% write_csv(file="../data/power-usage-predictions.csv")
+```
 
 # Part C
 
