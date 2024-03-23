@@ -21,11 +21,11 @@ library(tseries)
 
 
 # Part A
-In this part, we'll be attempting to forecast how much cash is taken out of 4 different ATM machines for May 2010. Our dataset is provided for us, and available on my GitHub. 
+In this part, we'll be attempting to forecast how much cash is taken out of 4 different ATM machines for May 2010. Our dataset is provided for us, and available on [my GitHub](https://github.com/andrewbowen19/predictiveAnalyticsData624/tree/main/data). 
 
 ## Data Wrangling and Visualization
 
-Our `DATE` column looks to be the number of days since 1900, so we 
+Our `DATE` column looks to be the number of days since 1900, so we'll fix that on read-in
 
 ```{r}
 # Read in our ATM data
@@ -37,10 +37,12 @@ atm <- atm %>%
 ```
 
 
-To start off with, let's plot our `atm` tsibble to get a sense of the data. We see that we have data for 4 ATMs, with some `NA` values for 
+To start off with, let's plot our `atm` tsibble to get a sense of the data. We see that we have data for 4 ATMs, with some `NA` values for the amount of cash withdrawn on certain dates. We also have some outlier points that we'll need to deal with as well.
 ```{r plot-atm, warning=FALSE, message=FALSE}
 atm %>% autoplot() + labs(x = "Date", y="Cash Withdrawn (Hundred of Dollars)", title="Cash withdrawn from ATMs 1-4: May 2009 - May 2010")
 ```
+
+### Imputation
 
 In our case, the `NA` values for the `ATM` variable all occur in May 2010, which is the month we are trying to predict. In this case, we should be able to drop these rows for now, with the intention of "re-adding" them later when we forecast
 ```{r filter-atm-na}
@@ -50,10 +52,14 @@ atm <- atm %>% filter(!is.na(ATM))
 
 
 ```{r plot-atm-no-na, warning=FALSE, message=FALSE}
-atm %>% autoplot() + labs(x = "Date", y="Cash Withdrawn (Hundred of Dollars)", title="Cash withdrawn from ATMs 1-4: May 2009 - May 2010")
+atm %>% autoplot() + 
+  labs(x = "Date",
+       y="Cash Withdrawn (Hundred of Dollars)",
+       title="Cash withdrawn from ATMs 1-4: May 2009 - May 2010")
 ```
+
 ## Imputation
-As a result of our `fill_gaps` call above, we're left with some NA values in our time series. We can find the mean cash withdrawn per ATM varies between the machines
+As a result of our `fill_gaps` call above, we're left with some NA values in our time series. We can find the mean cash withdrawn per ATM varies between the machines via a `dplyr` aggregation. These can serve us later for imputation
 
 ```{r atm-mean}
 mean_cash_by_atm <- atm %>% 
@@ -64,10 +70,10 @@ mean_cash_by_atm <- atm %>%
 mean_cash_by_atm
 ```
 
-As such, it makes more sense to impute *per ATM*, rather than taking the blanket mean of our `Cash` variable.
+As such, it makes more sense to impute the amount of cash withdrawn *based on the per ATM*, rather than taking the blanket mean of our `Cash` variable. This will help us to handle outliers like `ATM3` better.
 
-```{r atm-imputation}
-# Impute with mean value
+```{r atm-imputation, warning=FALSE}
+# Impute with mean value per ATM (hence the groupBy)
 atm <- atm %>% group_by(ATM) %>%
   mutate(Cash = ifelse(is.na(Cash), 
                        mean(Cash, na.rm=TRUE), 
@@ -77,13 +83,15 @@ atm <- atm %>% group_by(ATM) %>%
 atm %>% autoplot()
 ```
 
-## Outliers
+### Outliers
 We see a strong outlier point around February 2010, in which it appears a value of $\$1,092,000$ was withdrawn. There is a chance that this outlier is due to an internal error within the data collection process, so we'll have to handle that as well. For our purposes, we can replace that outlier value with a simple mean of the time series. 
 
 ```{r fix-atm-outliers}
 atm_with_outlier <- atm # Save TS with outlier for later comparison
 outlier_limit <- 3000
-atm_outlier <- atm %>% filter(Cash > outlier_limit) %>% mutate(Cash = mean(atm$Cash))
+atm_outlier <- atm %>% 
+  filter(Cash > outlier_limit) %>%
+  mutate(Cash = mean(atm$Cash))
 
 # Remove outlier row and add in "imputed" value
 atm <- atm %>% filter(Cash < outlier_limit)
@@ -122,7 +130,7 @@ adf.test(atm$Cash)
 ```
 In this case, we see a p-value of 0.01, so we can reject the null hypothesis and assume our time series is stationary. This means we **won't** have to apply differencing to our data, since it's already stationary.
 
-Let's also take a look at the ACF plot of our data. We see significant weekly lags (7 days) with autocorrelation. In simpler terms, ATM users tend to withdraw similar amounts depending on the day of the week.
+Let's also take a look at the ACF plot of our data. We see significant weekly lags (7 days) with autocorrelation. In simpler terms, ATM users tend to withdraw similar amounts depending on the day of the week. This makes sense, as people will likely have certain days of the week (e.g., Fridays) where they 
 
 ```{r atm-acf}
 # Plot the ACF of our ATM time series
@@ -132,26 +140,42 @@ We can also look at a lag plot for our data. Here we see a similar pattern from 
 ```{r}
 atm %>% filter(ATM == "ATM1") %>% gg_lag(geom="point")
 ```
-Now we can fit an ARIMA model to the ATM dataset. When using ARIMA in fable, the default behavior is that model parameters are automatically selected. 
+
+Now we can fit an ARIMA model to the ATM dataset. When using ARIMA in fable, the default behavior is that model parameters are automatically selected. We'll leverage this behavior in determining our ARIMA parameters $p, q, d$
 ```{r atm-arima}
-atm_fit <-atm %>% model(ARIMA(Cash))
+# Auto-select ARIMA parameters
+atm_fit <-atm %>% 
+  model(ARIMA(Cash))
 
 atm_fit
 ```
 
-Our `mable` for the ATM dataset contains an ARIMA model per panel (in this case, per ATM series). Each ARIMA model contains different values for $p, q, d$ as parameters. 
+Our `mable` for the ATM dataset contains an ARIMA model per panel (in this case, per ATM series). Each ARIMA model contains different values for $p, q, d$ as parameters.
 
 ```{r atm-arima-forecast}
 # Forecast and plot
-atm_fc <- atm_fit %>% forecast(h=10)
+atm_fc <- atm_fit %>% 
+  forecast(h=10)
 
 # Plot forecast per ATM
-atm_fc %>% autoplot(atm) + labs(x="Date",
-                                y="Cash Withdrawn",
-                                title="ARIMA models applied to ATM Withdrawal Datasets")
+atm_fc %>% autoplot(atm) + 
+  labs(x="Date",
+       y="Cash Withdrawn",
+       title="ARIMA models applied to ATM Withdrawal Datasets")
 ```
+We can create residual plots for each ATM to visually inspect our erros. We hop for normally-distributed residuals and no significant auto-correlations in our errors
 
-Our forecasts look reasonable visually, but we'll 
+```{r atm-residuals}
+# Plot residuals per ATM
+atms <- c("ATM1", "ATM2", "ATM3", "ATM4")
+for (atm in atms){
+  plot <- atm_fit %>%
+    filter(ATM == atm) %>%
+    gg_tsresiduals() +
+    labs(title=atm)
+  print(plot)
+}
+```
 
 
 Finally, we can write our output dataset to a CSV which can be read into excel. The output can be found on my [GitHub here](https://github.com/andrewbowen19/predictiveAnalyticsData624/blob/main/data/atm-predictions.csv)
@@ -164,7 +188,7 @@ atm_fc %>% dplyr::select("ATM", "DATE", "Cash", ".mean") %>%
 
 
 # Part B
-In this part we'll be looking at residential power usage between 1998 and 2010. First, we'll read in the datasets used. and perform some basic wrangling to get into a 
+In this part we'll be looking at residential power usage between 1998 and 2010. First, we'll read in the datasets used. and perform some basic wrangling to get into a shape suitable for time series forecasting.
 ```{r power-read-in}
 # Read in our Power Usage data
 usage <- read_excel("../data/ResidentialCustomerForecastLoad-624.xlsx")
@@ -177,10 +201,13 @@ usage <- usage %>%
 ```
 
 
-First, we'll plot the data
+First, we'll plot our time of power usage over time to get a visual sense of the data
 
 ```{r plot-usage}
-usage %>% autoplot(KWH)
+usage %>% autoplot(KWH) + 
+  labs(x="Date",
+       y="Power Usage (kilowatt-hours)",
+       title="Power Usage Over Time")
 ```
 
 Visually, we see an outlier point around July 2010 we'll likely need to deal with. We also see some missing values in addition to our seasonal data.
@@ -200,7 +227,7 @@ usage$KWH <- ifelse(is.na(usage$KWH), mean(usage$KWH, na.rm=TRUE), usage$KWH)
 usage %>% filter(is.na(usage$KWH))
 ```
 
-Next we'll remove our outlier point as well.
+Next we'll remove our outlier point as well, and replace it with the mean value of the time series.
 
 ```{r}
 # First, impute the outlier point to the mean
@@ -226,12 +253,15 @@ Let's check again for stationarity in our dataset via the Augmented Dickey Fulle
 ```{r}
 adf.test(usage$KWH_transformed)
 ```
-Again, we see a p-value less than 0.05, so we can reject the null hypothesis and assume our time series is stationary. This means we again **won't** have to apply differencing to our data. In this case as well, the variance of our seasonal fluctuations also does not change with time, so we won't need to transform the data (via Box-Cox or other methods).
+Again, we see a p-value less than 0.05, so we can reject the null hypothesis and assume our time series is stationary. In this case as well, the variance of our seasonal fluctuations also does not change with time, so we won't need to transform the data (via Box-Cox or other methods).
 
 
-Let's also take a look at the autocorrelation plots
-```{r}
-usage %>% ACF(KWH_transformed) %>% autoplot()
+Let's also take a look at the autocorrelation and lag plots. We see some signifiicant peaks in the PACF plot at a lag of 2 and 12, indicating we'll want both seasonal and non-seasonal MA parameters in our ARIMA model (see [Hyndman for similar example](https://otexts.com/fpp3/seasonal-arima.html#example-monthly-us-leisure-and-hospitality-employment)).
+```{r warning=FALSE}
+usage %>%
+  gg_tsdisplay(difference(KWH_transformed, 12) %>% difference(),
+               plot_type='partial', lag=36) +
+  labs(title="Seasonally differenced", y="")
 ```
 
 We see some strong seasonality with our data from the ACF plot, which is to be expected as we're dealing with highly seasonal data.
@@ -242,28 +272,48 @@ usage_fit <- usage %>%
   model(
     Mean = MEAN(KWH_transformed),
     `Naïve` = NAIVE(KWH_transformed),
-    `Seasonal naïve` = SNAIVE(KWH_transformed)
+    `Seasonal naive` = SNAIVE(KWH_transformed)
   )
 
 usage_fit %>% forecast(h=5) %>% autoplot(usage)
 ```
 
+We can look at the residuals of our basic prediction methods (Seasonal naive, in particular)
 
-We could also apply an ARIMA model here. In this case, we'll want a seasonal ARIMA model
+```{r usage-stl-residuals, warning=FALSE}
+usage_fit %>% select("Seasonal naive") %>% gg_tsresiduals()
+```
+We see normally-distributed residuals, but a significant lag of 12 in our Seasonal naive decomposition.
+
+We could also apply an ARIMA model here. In this case, we'll want a seasonal ARIMA model as we're handling a time series with stronger seasonal components. The significant lags at multiples of
 ```{r}
-usage_arima <- usage %>% model(ARIMA(KWH_transformed))
+# Train an ARIMA model on usage data
+usage_arima <- usage %>% model(
+  auto=ARIMA(KWH_transformed),
+  arima=ARIMA(KWH_transformed ~ pdq(2,1,0) + PDQ(0,1,1))
+  )
 
-usage_fc <- usage_arima %>% forecast(h=12)
+usage_fc <- usage_arima %>% 
+  forecast(h=12)
 
 usage_fc %>% autoplot(usage)
 ```
 
-Lastly, we'll write our forecasted values (including April 201)
+
+Let's take a look at our residual plots of our auto-selected model
+```{r usage-residuals, warning=FALSE}
+usage_arima %>% select(auto) %>% gg_tsresiduals()
+```
+
+
+We see a pretty big lag autocorrelation at periods of 3 and 6, but our residuals do appear to be *roughly* normally distributed in this case. 
+
+Lastly, we'll write our forecasted values for 2014. This file is availeble as a CSV on my [GitHub here](https://github.com/andrewbowen19/predictiveAnalyticsData624/blob/main/data/power-usage-predictions.csv)
 
 ```{r}
+# Write to excel: posted on GitHub
 usage_fc %>% write_csv(file="../data/power-usage-predictions.csv")
 ```
 
-# Part C
 
 
