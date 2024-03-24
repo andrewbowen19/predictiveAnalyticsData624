@@ -1,0 +1,42 @@
+---
+title: 'DATA 624: Homework 7'
+author: "Andrew Bowen"
+date: "2024-03-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(AppliedPredictiveModeling)
+library(caret)
+library(pls)
+```
+
+## Exercixe 6.2 (K&J)
+
+First, let's load the data
+```{r}
+data(permeability)
+
+```
+
+First, we'll filter **out** any sparse predictors with the `caret::nearZeroVar` fucntion
+```{r}
+filteredPredictors <- nearZeroVar(fingerprints)
+
+length(filteredPredictors)
+```
+
+We went from 1,107 predictors to 719 using this filtering, which should help in reducing our dimensionality. Next we can set up training and testing sets
+
+```{r train-test}
+train <- 
+```
+
+## Exercixe 6.3 (K&J)
+
