@@ -15,28 +15,176 @@ library(tidyverse)
 library(AppliedPredictiveModeling)
 library(caret)
 library(pls)
+library(GGally)
+library(questionr)
+library(corrplot)
+library(glue)
+library(car)
 ```
 
 ## Exercixe 6.2 (K&J)
 
-First, let's load the data
+First, let's load the data, which is a package dataset related to different chemical compounds' permeability
 ```{r}
 data(permeability)
-
 ```
 
-First, we'll filter **out** any sparse predictors with the `caret::nearZeroVar` fucntion
+First, we'll filter **out** any sparse predictors with the `caret::nearZeroVar` function and see our feature variable drop significantly
 ```{r}
 filteredPredictors <- nearZeroVar(fingerprints)
-
-length(filteredPredictors)
+selectedFeatures <- length(filteredPredictors)
+print(glue('Filtered features: {selectedFeatures}'))
 ```
 
-We went from 1,107 predictors to 719 using this filtering, which should help in reducing our dimensionality. Next we can set up training and testing sets
-
+We went from 1,107 predictors to 719 using this filtering, which should help in reducing our dimensionality. Next we can set up [training and testing sets](https://www.statology.org/train-test-split-r/)
 ```{r train-test}
-train <- 
+# Convert to dataframe and add target variable
+df <- as.data.frame(fingerprints[, -filteredPredictors])
+
+# Make reproducible
+set.seed(12345)
+
+#use 75% of dataset as training set and 30% as test set
+sample <- sample(c(TRUE, FALSE), nrow(df), replace=TRUE, prob=c(0.8,0.2))
+train  <- df[sample, ]
+train_perm <- permeability[sample, ]
+test   <- df[!sample, ]
+test_perm <-  permeability[!sample, ]
 ```
+
+We see similarly-shaped distributions to above, but one a different axes set as a result of our scaling. Now we can fit a PLS model to our training data using the `pls` package in R
+
+```{r warning=FALSE}
+plsTune <- train(train, train_perm,
+                 method = "pls",
+                 tuneLength = 25,
+                 trControl = trainControl("cv", number = 10), # use 10-fold cross-validation
+                 preProc = c("center", "scale"))
+# Print out tuning results
+plsTune
+```
+
+```{r}
+plot(plsTune)
+```
+
+We ended up with 20 latent variables in our PLS model as we specified during training, with an optimal number of ~10 components. Now we can predict on the test set to see how well our model performs
+
+```{r}
+predictions <- predict(plsTune, test)
+
+postResample(pred =predict(plsTune, test), obs = test_perm)
+```
+
+We get an $R^2$ value of 0.217, which isn't great in terms of predictive power. Let's see if another model specified in the chapter can do better. We'll try a Ridge Regression model
+
+```{r warning=FALSE}
+ridgeGrid <- data.frame(.lambda = seq(0, .1, length = 10)) # use the same tuning grid as K&J
+ridgeRegFit <- train(train, train_perm,
+                     method="ridge",
+                     tuneGrid = ridgeGrid,
+                     trControl = trainControl("cv", number = 5),
+                     preProc = c("center", "scale"))
+
+```
+
+Now let's plot our tuning of our ridge regression model
+```{r}
+plot(ridgeRegFit)
+```
+Now we can perform our prediction and see the predictions' $R^2$ value
+```{r}
+predictions <- predict(ridgeRegFit, test)
+
+postResample(pred = predictions, obs = test_perm)
+```
+
+With a ridge regression model, we see an improvement in our value for $R^2$. 
+
+##### Would you recommend any of your models to replace the permeability
+laboratory experiment?
+
+It depends on the specific modeling problem statement and business context in which the model will be operationalized. Between the two models, the ridge has better diagnostic metrics ($R^2$, RMSE), but may not necessarily lead to a more explainable model. Ridge regression is also best-suited for correlated sets of features, which is likely as certain compounds that have a similar molecular structure likely exhibit similar permeability behavior.
+
 
 ## Exercixe 6.3 (K&J)
 
+Similar to above, we'll load in the dataset from an R package:
+```{r}
+data("ChemicalManufacturingProcess")
+
+chemical <- ChemicalManufacturingProcess
+```
+
+For our missing values, we can use the `knnImpute` method of imputation, which imputes missing values based on a given instance's neighbors.
+```{r}
+freq.na(chemical)
+```
+
+```{r}
+# Impute missing values in our chemical yield data
+imputed <- preProcess(chemical,
+                       method = c("knnImpute"))
+
+trans <- predict(imputed, chemical)
+```
+
+
+We can set up a train-test split
+```{r}
+# Split into train and test splits
+#use 75% of dataset as training set and 30% as test set
+sample <- sample(c(TRUE, FALSE), nrow(trans), replace=TRUE, prob=c(0.8,0.2))
+train  <- trans[sample, ]
+# train_chem <- permeability[sample, ]
+test   <- trans[!sample, ]
+test_chem <-  trans[!sample, ]
+```
+
+Now we can perform a pre-processing and tuning of another PLS model to predict our `Yield` variable. In this case, we'll perform a center & scaling operation for preprocessing
+```{r}
+plsTuneChem <- train(train %>% dplyr::select(-c("Yield")), train$Yield,
+                 method = "pls",
+                 tuneLength = 25,
+                 trControl = trainControl("cv", number = 10), # use 10-fold cross-validation
+                 preProc = c("center", "scale"))
+# Print out tuning results
+plsTuneChem
+```
+
+
+```{r}
+plot(plsTuneChem)
+```
+
+
+```{r}
+predictions <- predict(plsTuneChem, test_chem)
+
+postResample(pred = as.matrix(predictions), obs = as.matrix(test_chem))
+```
+
+We see a RMSE value of 1.187 for our PLS model trained on the chemical data, this is worse than the resampled RMSE vlaues on the training set when iterating through each component. Next we can plot the importance of individual features within our model
+
+```{r}
+# Plot importance of variables to our model
+imps <- varImp(plsTuneChem)
+plot(imps, top = 10)
+```
+
+In our variable importance plot `ManufacturingProcess` variables tend to dominate over `BigologicalMaterial` variables.
+
+```{r}
+importance <- imps$importance
+importance$Process <- rownames(importance)
+
+# Get top-10 most important processes)
+top_importance <- head(importance[order(importance$Overall, decreasing = TRUE), ], 10)
+
+# Plot correlation plot of most-important features
+corChem <- cor(train[, top_importance$Process])
+
+corrplot(corChem)
+```
+
+From our correlation matrix plot, we see some stronger correlations among our most-important feature variables. Knowing that certain manufacturing processes. could be strongly correlated between themselves could lean to process streamlining. For example, if two processes ar ehighly correlated, there's a stronger chance (though not a guarantee) that they are in fact redundant when it comes to producing a higher pharmaceutical yield.

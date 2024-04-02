@@ -1,0 +1,64 @@
+---
+title: 'DATA 624: Homework 8'
+author: "Andrew Bowen"
+date: "2024-04-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(MASS)
+library(caret)
+library(mlbench)
+```
+## Exercise 7.2 (K&J)
+
+Let's create the simulated data from *Friedman*
+
+```{r}
+set.seed(200)
+trainingData <- mlbench.friedman1(200, sd = 1)
+
+trainingData$x <- data.frame(trainingData$x)
+
+featurePlot(trainingData$x, trainingData$y)
+
+
+# Set up test data
+testData <- mlbench.friedman1(5000, sd = 1)
+testData$x <- data.frame(testData$x)
+```
+
+Before we model, let's get a summary of both our training features and test data, plotting them via `ggpairs`
+
+```{r, warning=FALSE, message=FALSE}
+# Plot training data distributions
+ggpairs(cbind(trainingData$x, trainingData$y))
+```
+
+
+We'll train the KNN model specified in K&J
+```{r}
+# library(caret)
+knnModel <- train(x = trainingData$x,
+                   y = trainingData$y,
+                   method = "knn",
+                   preProc = c("center", "scale"))
+
+knnModel
+```
+
+
+```{r}
+
+```
+
+
+## Exercise 7.5 (K&J)
+
+
