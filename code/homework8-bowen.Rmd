@@ -15,10 +15,14 @@ library(tidyverse)
 library(MASS)
 library(caret)
 library(mlbench)
+library(xgboost)
+library(GGally)
+library(e1071)
+library(corrplot)
 ```
 ## Exercise 7.2 (K&J)
 
-Let's create the simulated data from *Friedman*
+Let's create the simulated data from *Friedman* using the same bit of code to generate the simulated data. We'll also create the feature distribution plot in the same manner as the text.
 
 ```{r}
 set.seed(200)
@@ -34,15 +38,17 @@ testData <- mlbench.friedman1(5000, sd = 1)
 testData$x <- data.frame(testData$x)
 ```
 
-Before we model, let's get a summary of both our training features and test data, plotting them via `ggpairs`
+Before we model, let's get a summary of both our training features and test data, plotting them via `ggpairs`. 
 
 ```{r, warning=FALSE, message=FALSE}
 # Plot training data distributions
 ggpairs(cbind(trainingData$x, trainingData$y))
 ```
 
+While the scatter plots are a bit busy, we see *some* relatively normally distributed features. 
 
-We'll train the KNN model specified in K&J
+
+We'll train the KNN model specified in K&J. We'll specify a default `tuneLength` across this exercise of 10 for standardization in tuning
 ```{r}
 # library(caret)
 knnModel <- train(x = trainingData$x,
@@ -54,11 +60,208 @@ knnModel
 ```
 
 
+Now we'll actually predict against our test data using the KNN model. We'll print out the root-mean squared error as well, which is a diagnostic metric we can use to evaluate the efficacy of a regression model.
 ```{r}
+knnPred <- predict(knnModel, testData$x)
 
+RMSE(knnPred, testData$y)
 ```
+
+
+Let's train a decision tree on our data as well. Decision trees can be robust models, but are often prone to overfiting on training data.
+```{r}
+decisionTreeModel <- train(x=trainingData$x,
+                 y=trainingData$y,
+                 method="rpart",
+                 tuneLength=10)
+
+decisionTreeModel
+```
+
+```{r}
+# Predict using decision tree
+predictTree <- predict(decisionTreeModel, testData$x)
+
+RMSE(predictTree, testData$y)
+```
+
+We'll also train a MARS model similar to the method employed in K&J. 
+```{r}
+# Train spline model (MARS) 
+marsGrid <- expand.grid(.degree = 1:2, .nprune = 2:38)
+marsTuned <- train(x=trainingData$x,
+                   y=trainingData$y, method = "earth", tuneGrid = marsGrid,
+                   trControl = trainControl(method = "cv"))
+
+marsTuned
+```
+
+We'll predict using the MARS model to see the RMSE on testing data
+```{r predict-mars}
+predictMars <- predict(marsTuned, testData$x)
+
+RMSE(predictMars, testData$y)
+```
+
+We can use the `varImp` function to see which are the most important features for a given model. In the case of our MARS model, we can see that the informative predictors (`X1 - X5`) are in fact selected
+
+```{r}
+varImp(marsTuned)
+```
+
+Lastly, let's try to train an XGBoost (Gradient Boosting), we can use the [`xgboost` library within R to do so](https://xgboost.readthedocs.io/en/stable/R-package/xgboostPresentation.html). XGBoost can be used for both regression and classification tasks.
+```{r}
+# Train XGBoost model
+xgBoosetModel <- xgboost(data = as.matrix(trainingData$x), 
+                         label = as.matrix(trainingData$y),
+                         max.depth = 2, eta = 1, nthread = 2,
+                         nrounds = 2)
+
+xgBoosetModel
+```
+
+
+In terms of purely RMSE when predicting against our test data, we see the best performance from the MARS model. 
+
 
 
 ## Exercise 7.5 (K&J)
 
+```{r, warning=FALSE}
+# Load chemical data
+library(AppliedPredictiveModeling)
+library(kernlab)
+library(earth)
+library(nnet)
+library(ModelMetrics)
+
+data("ChemicalManufacturingProcess")
+
+chemical <- ChemicalManufacturingProcess
+chemical_features <- chemical %>% dplyr::select(-c("Yield"))
+```
+
+We'll impute this data the same way we did in HW7
+```{r}
+# Impute chemical yield data
+imputed <- preProcess(chemical,
+                       method = c("knnImpute"))
+
+trans <- predict(imputed, chemical)
+```
+
+We'll also set up a train-test split as well
+```{r}
+# Split into train and test splits
+#use 75% of dataset as training set and 30% as test set
+sample <- sample(c(TRUE, FALSE), nrow(trans), replace=TRUE, prob=c(0.8,0.2))
+train  <- trans[sample, ]
+train_yield <- train$Yield
+train <- train %>% 
+  dplyr::select(-c("Yield"))
+test <- trans[!sample, ]
+test_yield <- test$Yield
+test <- test  %>% 
+  dplyr::select(-c("Yield"))
+```
+
+
+Now we can try a spline regression model similar to how it's done in K&J
+```{r, warning=FALSE}
+marsGrid <- expand.grid(.degree = 1:2, .nprune = 2:20)
+marsTuned <- train(x = train,
+                   y = train_yield,
+                   method = "earth", tuneGrid =marsGrid,
+trControl = trainControl(method = "cv"))
+
+marsTuned
+```
+
+We can plot our spline model, and we see the resulting errors over our cross-validation folds.
+```{r}
+plot(marsTuned)
+```
+
+
+
+```{r}
+# train a support vector
+svmFit <- train(train, train_yield, method = "svmRadial",
+                    preProc = c("center", "scale"), tuneLength = 15,
+                    trControl = trainControl(method = "cv"))
+
+
+svmFit$resample
+```
+
+
+We can get the RMSE of our SVM regression model based on the predicted alues compared against the testing values
+
+```{r}
+rmse(predict(svmFit, test), test_yield)
+```
+
+We can also train a KNN regression model to predict the `Yield` output variable
+```{r}
+knnTune <- train(train,
+                 train_yield,
+                 method = "knn",
+                 preProc = c("center", "scale"), # setting this in the model training will make it occur for testing as well
+                 tuneGrid = data.frame(.k = 1:20),
+                 trControl = trainControl(method = "cv"))
+```
+
+```{r}
+plot(knnTune)
+```
+
+Based on RMSE as our metric, we see an ideal number of 6 neighbors to be used for this model.
+
+
+Lastly, we'll train a neural net model on our checmical processing data
+```{r warning=FALSE, message=FALSE, echo = T, results = 'hide'}
+nnetFit <- train(train, train_yield,
+                  method = "nnet",
+                 tuneLength=10,
+                 preProc = c("center", "scale"), trace = FALSE,
+                trControl = trainControl(method = "cv"))
+```
+
+
+```{r}
+nnPred <- predict(nnetFit, test)
+
+nnetFit$results
+```
+
+
+
+
+Let's use the `varImp` function to see which feature variables in our fit are most consequential
+
+```{r}
+(importance <- varImp(nnetFit))
+```
+
+
+We see the variable for our neural network that's most important is the `ManufacturingProcess32`. In fact, we see the Manufacturing variables dominate the top 10 most important variables for this fit. This is the same as the case of the linear models trained in Exercise 6.3, in which manufacturing process variables had a higher influence.
+
+One way that we could visualize the relationships between our predictor variables and 
+
+```{r}
+# Get top-10 feature names
+importance <- importance$importance
+importance$feature <- rownames(importance)
+importance <- importance[order(importance$Overall, decreasing=TRUE), ]
+
+# Get importance feature names
+important_features <- rownames(head(importance, 10))
+
+# Create correlelogram of imputed chemical data
+correlation <- cor(imputed$data[, c(important_features, "Yield")])
+corrplot(correlation)
+```
+
+
+We see some stronger correlations between some feature variables, for instance manufacturing processes 9 and 13 are strongly negatively correlated. Overall, the one Biological process doesn't correlate well with most manufacturing processes, which makes sense as these are likely much different processes. 
 
