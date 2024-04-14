@@ -235,8 +235,6 @@ nnetFit$results
 ```
 
 
-
-
 Let's use the `varImp` function to see which feature variables in our fit are most consequential
 
 ```{r}
@@ -257,7 +255,7 @@ importance <- importance[order(importance$Overall, decreasing=TRUE), ]
 # Get importance feature names
 important_features <- rownames(head(importance, 10))
 
-# Create correlelogram of imputed chemical data
+# Create correllelogram of imputed chemical data
 correlation <- cor(imputed$data[, c(important_features, "Yield")])
 corrplot(correlation)
 ```
