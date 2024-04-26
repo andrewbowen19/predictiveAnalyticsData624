@@ -1,0 +1,236 @@
+---
+title: 'DATA 624: Homework 9'
+author: "Andrew Bowen"
+date: "2024-04-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(caret)
+library(party)
+library(randomForest)
+library(gbm)
+```
+
+
+## Exercise 8.1
+
+
+First, let's recreate the data as they do in K&J
+```{r}
+library(mlbench)
+set.seed(200)
+simulated <- mlbench.friedman1(200, sd = 1) 
+simulated <- cbind(simulated$x, simulated$y)
+simulated <- as.data.frame(simulated)
+colnames(simulated)[ncol(simulated)] <- "y"
+```
+
+Now we can fit a random forest model to this dataset
+
+```{r}
+model1 <- randomForest(y ~ ., data = simulated, importance = TRUE,
+ntree = 1000)
+
+rfImp1 <- varImp(model1, scale = FALSE)
+
+rfImp1
+```
+
+In terms of [variable importance](https://developers.google.com/machine-learning/decision-forests/variable-importances), the uninformative predictors are **not** being used by this model since they have some of the lower importance scores being returned.
+
+```{r first-duplicate-variable}
+# Add correlated predictor
+simulated$duplicate1 <- simulated$V1 + rnorm(200) * .1
+
+# Fit separate random forest variable
+model2 <- randomForest(y ~ ., data = simulated, importance = TRUE, ntree = 1000)
+
+rfImp2 <- varImp(model2, scale = FALSE)
+
+rfImp2
+```
+
+We see this duplicate variable has a relatively higher importance factor, while `V1` has a now lower importance factor. If we add another duplicate variable (from `V2`) we'll see those importance factors
+
+
+```{r second-duplicate-variable}
+# Add correlated predictor
+simulated$duplicate2 <- simulated$V1 + rnorm(200) * .1
+
+# Fit separate random forest variable
+model3 <- randomForest(y ~ ., data = simulated, importance = TRUE, ntree = 1000)
+
+rfImp3 <- varImp(model3, scale = FALSE)
+
+rfImp3
+```
+
+Here we see the importance for `V1` drops *again* with a second highly-correlated variable added. 
+
+```{r}
+# Traing conditional inference tree
+bagCtrl <- cforest_control(mtry = ncol(simulated) - 1)
+baggedTree <- cforest(y ~ ., data = simulated, controls = bagCtrl)
+
+varimp(baggedTree, conditional=TRUE)
+```
+
+We see a similar pattern here of the uninformative predictors (`V6 - V10`) don't have strong importance in the conditional forest.
+
+Let's train on the same dataset with different tree types
+```{r}
+library(Cubist)
+# Cubist model
+predictors <- simulated %>% select(-c("y"))
+cubistTuned <- cubist(predictors, simulated$y)
+
+varImp(cubistTuned)
+```
+
+
+```{r}
+# Boosted model
+gbmGrid <- expand.grid(interaction.depth = seq(1, 5, by = 2), 
+                       n.trees = seq(100, 1000, by = 200), 
+                       shrinkage=c(0.1, 1.0),
+                       n.minobsinnode=seq(1, 5, 2))
+gbmTuned <- train(predictors, simulated$y, method = "gbm",
+                  tuneGrid = gbmGrid,verbose = FALSE)
+
+
+varImp(gbmTuned)
+```
+
+In both cases we see the uninformative variables are **not** the most important for these models as well. In general, strong correlation will be pulled through in most models, regardless of algorithm changed
+
+## Exercise 8.2
+**Use a simulation to show tree bias with different granularities.**
+
+```{r}
+library(rpart)
+
+# Re-sumlate data from Friedman
+set.seed(12345)
+simulated2 <- mlbench.friedman1(150, sd = 1) 
+simulated2 <- cbind(simulated2$x, simulated2$y)
+simulated2 <- as.data.frame(simulated2)
+colnames(simulated2)[ncol(simulated2)] <- "y"
+```
+
+```{r}
+trainX <- simulated2 %>% dplyr::select(-c("y"))
+trainY <- simulated2 $y
+rpartTune <- train(trainX, trainY, method = "rpart2",
+                   tuneLength = 10,
+                   trControl = trainControl(method = "cv"))
+
+
+varImp(rpartTune)
+
+```
+
+## Exercise 8.3
+The learning rate controls the contributions of weak learners, which could be dependent on factors that aren't that important in predicting the outcome in the underlying data. In this case, the lower learning rate is less prone to overfitting to training data, since it will have contributions from a wider base of input variables, and not be as dependent on one fortunate training split.
+
+Increasing the interaction depth of each tree would likely result in a higher variance in individual learners, since additional tree splits would be introduced. All things being equal, this would result in a more gradual slope in the Variable importance plots, akin to what we'd see in the left-hand diagram
+
+## Exercise 8.7
+
+Let's use the same bit of code as we did before to set up our dataset:
+```{r, warning=FALSE}
+# Load chemical data
+library(AppliedPredictiveModeling)
+library(kernlab)
+library(earth)
+library(nnet)
+library(ModelMetrics)
+
+data("ChemicalManufacturingProcess")
+
+chemical <- ChemicalManufacturingProcess
+chemical_features <- chemical %>% dplyr::select(-c("Yield"))
+```
+
+We'll impute this data the same way we did in HW7
+```{r}
+# Impute chemical yield data
+imputed <- preProcess(chemical,
+                       method = c("knnImpute"))
+
+trans <- predict(imputed, chemical)
+```
+
+We'll also set up a train-test split as well
+```{r}
+# Split into train and test splits
+#use 75% of dataset as training set and 30% as test set
+sample <- sample(c(TRUE, FALSE), nrow(trans), replace=TRUE, prob=c(0.8,0.2))
+train  <- trans[sample, ]
+train_yield <- train$Yield
+train <- train %>% 
+  dplyr::select(-c("Yield"))
+test <- trans[!sample, ]
+test_yield <- test$Yield
+test <- test  %>% 
+  dplyr::select(-c("Yield"))
+```
+
+
+First, we'll train a gradient-boosting model via `gbm`
+```{r}
+gbmReg <- train(train, train_yield, method = "gbm",
+       tuneGrid = gbmGrid, verbose = FALSE)
+
+# Calculate RMSE of gradient boosted tree
+gbmPred <- predict(gbmReg, test)
+ModelMetrics::rmse(test_yield, gbmPred)
+```
+
+Next, we can train a decision tree modelusing `rpart`
+```{r}
+rpartReg <- train(train, train_yield, method = "rpart2",
+                  tuneLength = 10,
+                  trControl = trainControl(method = "cv"))
+
+# Calculate RMSE of gradient boosted tree
+rpartPred <- predict(rpartReg, test)
+ModelMetrics::rmse(test_yield, rpartPred)
+```
+
+Alternatively, we can train a random Forest model as wel using the method employed in K&J
+```{r}
+library(randomForest)
+rfModel <- randomForest(train, train_yield)
+
+
+
+rfPred <- predict(rfModel, test)
+ModelMetrics::rmse(test_yield, rfPred)
+```
+
+
+
+
+Of our three models, our gradient-boosted and random forest perform the best in terms of RMSE. For this exercise, let's gow with the random forest model
+
+
+```{r}
+varImp(rfModel)
+```
+
+We see the Biological variables to be dominated by our random forest model.This is different than previous exercises, in which manufacturing processes dominated the variable importance plots
+
+We can plot the tree trained via rpart using the `rpart.plot` functions
+
+```{r}
+library(rpart.plot)
+
+rpartTree <- rpart(train_yield ~ ., data = cbind(train, train_yield))#, method = "reg")
+rpart.plot(rpartTree)
+```

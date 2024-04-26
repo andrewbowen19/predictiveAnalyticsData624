@@ -1,0 +1,97 @@
+---
+title: 'DATA 624: Homework 10'
+author: "Andrew Bowen"
+date: "2024-04-26"
+output: html_document
+---
+
+```{r libraries, message=FALSE}
+library(tidyverse)
+library(caret)
+library(arules)
+```
+
+
+```{r}
+# Read in file from BB posting
+data <- read.transactions("https://learn-us-east-1-prod-fleet02-xythos.content.blackboardcdn.com/61aab133e7df2/15994286?X-Blackboard-S3-Bucket=learn-us-east-1-prod-fleet01-xythos&X-Blackboard-Expiration=1714154400000&X-Blackboard-Signature=EXNbsp64188aDjV5ghvpIntldSZyodmooKdARIQis%2Bs%3D&X-Blackboard-Client-Id=100211&X-Blackboard-S3-Region=us-east-1&response-cache-control=private%2C%20max-age%3D21600&response-content-disposition=inline%3B%20filename%2A%3DUTF-8%27%27GroceryDataSet.csv&response-content-type=text%2Fcsv&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEHYaCXVzLWVhc3QtMSJHMEUCIQCPzoozXPE1F4nXsIGTwWl5%2FKQ2WV1Lvj8P77kujmDfFgIgGLl3RYlXs2RPhBOEechJ2e75alzuSmnEDkIjsXAGMEoqvQUIv%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARADGgw2MzU1Njc5MjQxODMiDFtXL4Jkwt65okwHxiqRBR%2Bm8NJuX3%2FeT81Xh%2BOa%2FCTSnAbnFIpY9qgdBVxBS1uvaxRGtm%2FECck%2BrXiPvFzG0z4XdNx1x4joRiWSkQgYO7QVOltxsCGSsDPj8Lre85MmyHsT25DhcTf1ieRl%2BSzKDwljW%2Bh2klESX1pMaWIKW4HOvypaNPcWrLlBqXpb44pW4yo7m4dJqnpgOmldN%2FzAEAAcoJYlPQQxdvbDo5k0naI%2Ffw5o9nJJkK76oJQF2WQ0rC5Cf3groL0HIMDtkLT%2FYItLtxsYy5n1k3or6meEKhFovEeW3jaIOH23X4Cl1dqj3X%2FGO7XwYg7ru5C9t5f84WpjGSKNO0DuJb090I1J6lT%2FFcZeoSSWgsySropjeB%2B499%2BXkSrPPKB81Zc9fRT0yiDNBdZfD0cdMEVNLy%2BmKKuS5%2BJk5sb3ZoIa0%2F8GLb9jgwqVLwELtN%2B0jJIwLxXB3fEe%2Fi2q4bcyzJ1K2za3Sfj7VAiggDcYxbK%2FH%2BdrP5Vv433C%2BgtJKCP2nLaLLWfrqUcILs6t8%2B%2B15tbDbW7jD%2FM4WvGplummBa1VRcDeT7%2Frvk8oDQU8LhB6D1fH4viBb17SzNQYIwh4Ix6KcRjIPmCAbOpV2IAT42hGgTKkoaugmKCdSxs%2F3Q20tN7ZVADsRpz34TvAMfqOWnk8jDHF7IZUrHuDp9Y%2BrrlwmVf7skK3cRZcnzJ%2FnpW267%2Fgqkl%2FcvBau1hYUZfRNRhrL9%2B4SeOMwROACwlBkIat4jDtIio7GEJOZTwIRu0R%2F5X05oBEW99QqeDtW0JRFeCbLgNE2hf9PQ2TaBqNF3KdqAtCsbkHJTLa%2B%2FbroYdmOSH6EOxFrQYzcNMtyxBcoR6TEL9yrSNZ8U0ltb0uSkN1URue%2B5nf6DDT266xBjqxAenwDmGoi%2BXKOet8wunv6iHxx9uAGmdzj9A61u86JYR25vAA3w1v2vFPlwpsbgi3hDm1EltjIGmAwpnI%2FQhmms2cxA8sYdcMbdVuNQ3N4J6CtSs76G47WaVn%2BxYxe8uJKoTEZPXPg9GwosEnqLERltXlql4RO3%2BPHDwrq4F0tS0zbFBsKVPs%2FQz5I7s%2FtmE2HRJ2WplMVXQFMshwkuUUY9Pqa40WxJVN7O96kvew7RquEg%3D%3D&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20240426T120000Z&X-Amz-SignedHeaders=host&X-Amz-Expires=21600&X-Amz-Credential=ASIAZH6WM4PL6OFBYI4R%2F20240426%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Signature=ccc7803bceb51d061e6b1ab78934216319096403228d1a48247b4054bd3c92a1", sep=",")
+
+
+head(data)
+```
+
+```{r}
+# Print a summary of our transaction set
+summary(data)
+```
+
+
+Given that our dataset is a list of transactions without a label we're trying to predict (a very common unsupervised learning task) we can use association rules to mine this data for helpful insights. I found [*Practical Machine Learning in R* Chapter 11 ](https://www.wiley.com/en-us/Practical+Machine+Learning+in+R-p-9781119591535) to be a really helpful resource on association rules (and unsupervised learnign more broadly). Specifically, we can use the [A Priori Algorithm](https://www.geeksforgeeks.org/apriori-algorithm/) from the `arules` library, which is a very commonly-used association rule mining algorithm.
+```{r}
+rules <- 
+   apriori(data, 
+          parameter = list( 
+          support = 0.0085, 
+          confidence = 0.5, 
+          minlen = 2 
+        ))
+
+```
+
+```{r rule-summary}
+summary(rules)
+```
+
+
+We can also use the `inspect` function and some dply magic to get the top-10 rules by lift, along with each rule's support and confidence
+```{r}
+rules %>% 
+   sort(by = "lift") %>% 
+   head(n = 10) %>% 
+   inspect() 
+```
+To increase sales based on this ruleset, a store manager may want to consider placing vegetables next to fruits (citrus or tropical), as those items are frequently purchased together. In addition, grouping dairy products together also would help to increase complementary purchases.
+
+
+### Simple Clustering Analysis
+We can use the K-Means clustering method on this transaction data. First we'll want to convert to a format suitable for clustering. In our case, each row will represent one transaction, with the column values representing items and whetehr or not they were purchased (`1`) or not (`0`) in a given transaction
+```{r}
+# Convert the transactions dataset to a quasi-adjacency matrix, multiply by 1 to convert booleans to 0/1
+df <-  1 * as(data,"matrix")
+```
+
+Now that we have our transactions as suitable feature vectors, we can try various values of $k$ to see which parititions our transaction data best. I found this [DataCamp tutorial helpful](https://www.datacamp.com/tutorial/k-means-clustering-r) for this step, using the `kmeans` function within the `stats` library.
+```{r}
+# Decide how many clusters to look at
+n_clusters <- 15
+
+# Initialize total within sum of squares error
+wss <- numeric(n_clusters)
+
+set.seed(1234)
+
+# Look over 1 to n possible clusters
+for (i in 1:n_clusters) {
+  # Fit the model: km.out
+  km.out <- kmeans(df, centers = i, nstart = 20)
+  # Save the within cluster sum of squares
+  wss[i] <- km.out$tot.withinss
+}
+
+```
+
+
+```{r plot-kmeans-scree}
+# Produce a scree plot
+wss_df <- tibble(clusters = 1:n_clusters, wss = wss)
+ 
+scree_plot <- ggplot(wss_df, aes(x = clusters, y = wss, group = 1)) +
+    geom_point(size = 4)+
+    geom_line() +
+    scale_x_continuous(breaks = seq(2, 15, 2)) +
+    xlab('Number of clusters')
+scree_plot
+```
+
+
+Other evaluation metrics we could use for our clusters could be the Silhouette score or the Davied-Boulding index for an unsupervised learning task
